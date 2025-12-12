@@ -1,0 +1,73 @@
+site_name: fasthooks
+site_description: Delightful Claude Code hooks with a FastAPI-like developer experience
+site_url: https://oneryalcin.github.io/fasthooks/
+repo_name: oneryalcin/fasthooks
+repo_url: https://github.com/oneryalcin/fasthooks
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep-purple
+      accent: purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep-purple
+      accent: purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - content.code.annotate
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - search.suggest
+    - search.highlight
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Tutorial:
+      - tutorial/index.md
+      - Events: tutorial/events.md
+      - Responses: tutorial/responses.md
+      - Dependencies: tutorial/dependencies.md
+      - Blueprints: tutorial/blueprints.md
+      - Middleware: tutorial/middleware.md
+      - Testing: tutorial/testing.md
+  - CLI Reference: cli.md
+  - API Reference: reference.md
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/oneryalcin/fasthooks
