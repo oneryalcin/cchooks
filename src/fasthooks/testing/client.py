@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import anyio
 
 from fasthooks.events.base import BaseEvent
-from fasthooks.responses import HookResponse, PermissionHookResponse
+from fasthooks.responses import BaseHookResponse
 
 if TYPE_CHECKING:
     from fasthooks.app import HookApp
@@ -37,28 +37,26 @@ class TestClient:
         """
         self.app = app
 
-    def send(self, event: BaseEvent) -> HookResponse | PermissionHookResponse | None:
+    def send(self, event: BaseEvent) -> BaseHookResponse | None:
         """Send an event to the app and return the response.
 
         Args:
             event: Typed event (from MockEvent or manual)
 
         Returns:
-            HookResponse/PermissionHookResponse if actionable, None if pass-through
+            BaseHookResponse if actionable, None if pass-through
         """
         # Convert event to dict for dispatch
         data = event.model_dump()
         return anyio.run(self.app._dispatch, data)
 
-    def send_raw(
-        self, data: dict[str, Any]
-    ) -> HookResponse | PermissionHookResponse | None:
+    def send_raw(self, data: dict[str, Any]) -> BaseHookResponse | None:
         """Send raw event data to the app.
 
         Args:
             data: Raw event dict (as Claude Code would send)
 
         Returns:
-            HookResponse/PermissionHookResponse if actionable, None if pass-through
+            BaseHookResponse if actionable, None if pass-through
         """
         return anyio.run(self.app._dispatch, data)

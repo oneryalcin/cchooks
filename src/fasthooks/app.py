@@ -38,7 +38,7 @@ from fasthooks.events.tools import (
 )
 from fasthooks.logging import EventLogger
 from fasthooks.registry import HandlerEntry, HandlerRegistry
-from fasthooks.responses import HookResponse, PermissionHookResponse
+from fasthooks.responses import BaseHookResponse
 
 # Map tool names to typed event classes
 TOOL_EVENT_MAP: dict[str, type[ToolEvent]] = {
@@ -175,7 +175,7 @@ class HookApp(HandlerRegistry):
 
     async def _dispatch(
         self, data: dict[str, Any]
-    ) -> HookResponse | PermissionHookResponse | None:
+    ) -> BaseHookResponse | None:
         """Dispatch event to appropriate handlers.
 
         Args:
@@ -251,7 +251,7 @@ class HookApp(HandlerRegistry):
         self,
         handlers: list[HandlerEntry],
         event: BaseEvent,
-    ) -> HookResponse | PermissionHookResponse | None:
+    ) -> BaseHookResponse | None:
         """Run handlers wrapped in middleware chain.
 
         Args:
@@ -262,14 +262,12 @@ class HookApp(HandlerRegistry):
             Response from middleware or handlers
         """
         # Build the innermost function (actual handler execution)
-        async def run_handlers(
-            evt: BaseEvent,
-        ) -> HookResponse | PermissionHookResponse | None:
+        async def run_handlers(evt: BaseEvent) -> BaseHookResponse | None:
             return await self._run_handlers(handlers, evt)
 
         # Wrap with middleware (outermost first)
         chain: Callable[
-            [BaseEvent], Coroutine[Any, Any, HookResponse | PermissionHookResponse | None]
+            [BaseEvent], Coroutine[Any, Any, BaseHookResponse | None]
         ] = run_handlers
         for mw in reversed(self._middleware):
             chain = self._wrap_middleware(mw, chain)
@@ -279,33 +277,21 @@ class HookApp(HandlerRegistry):
     def _wrap_middleware(
         self,
         middleware: Callable[..., Any],
-        next_fn: Callable[
-            [BaseEvent], Coroutine[Any, Any, HookResponse | PermissionHookResponse | None]
-        ],
-    ) -> Callable[
-        [BaseEvent], Coroutine[Any, Any, HookResponse | PermissionHookResponse | None]
-    ]:
+        next_fn: Callable[[BaseEvent], Coroutine[Any, Any, BaseHookResponse | None]],
+    ) -> Callable[[BaseEvent], Coroutine[Any, Any, BaseHookResponse | None]]:
         """Wrap a middleware around the next function in chain."""
 
         if inspect.iscoroutinefunction(middleware):
             # Async middleware - can await next_fn directly
-            async def async_wrapped(
-                event: BaseEvent,
-            ) -> HookResponse | PermissionHookResponse | None:
-                result: HookResponse | PermissionHookResponse | None = await middleware(
-                    event, next_fn
-                )
+            async def async_wrapped(event: BaseEvent) -> BaseHookResponse | None:
+                result: BaseHookResponse | None = await middleware(event, next_fn)
                 return result
 
             return async_wrapped
         else:
             # Sync middleware - provide sync call_next that bridges to async
-            async def sync_wrapped(
-                event: BaseEvent,
-            ) -> HookResponse | PermissionHookResponse | None:
-                def sync_call_next(
-                    evt: BaseEvent,
-                ) -> HookResponse | PermissionHookResponse | None:
+            async def sync_wrapped(event: BaseEvent) -> BaseHookResponse | None:
+                def sync_call_next(evt: BaseEvent) -> BaseHookResponse | None:
                     # Bridge from threadpool back to event loop
                     return anyio.from_thread.run(next_fn, evt)
 
@@ -319,15 +305,15 @@ class HookApp(HandlerRegistry):
         self,
         handlers: list[HandlerEntry],
         event: BaseEvent,
-    ) -> HookResponse | PermissionHookResponse | None:
-        """Run handlers in order, stopping on deny/block.
+    ) -> BaseHookResponse | None:
+        """Run handlers in order, stopping when should_return() is True.
 
         Args:
             handlers: List of (handler, guard) tuples
             event: Typed event object
 
         Returns:
-            First deny/block response, or None
+            First actionable response, or None
         """
         for handler, guard in handlers:
             try:
@@ -347,21 +333,15 @@ class HookApp(HandlerRegistry):
 
                 # Run handler (supports async handlers)
                 if inspect.iscoroutinefunction(handler):
-                    response: HookResponse | PermissionHookResponse | None = await handler(
-                        event, **deps
-                    )
+                    response: BaseHookResponse | None = await handler(event, **deps)
                 else:
                     response = await anyio.to_thread.run_sync(
                         functools.partial(handler, event, **deps)
                     )
 
-                # Check for actionable response
-                if response:
-                    if isinstance(response, PermissionHookResponse):
-                        # Return any PermissionHookResponse (allow or deny)
-                        return response
-                    elif response.decision in ("deny", "block"):
-                        return response
+                # Check if response should stop handler chain
+                if response and response.should_return():
+                    return response
             except Exception as e:
                 # Log and continue (fail open)
                 print(f"[fasthooks] Handler {handler.__name__} failed: {e}", file=sys.stderr)

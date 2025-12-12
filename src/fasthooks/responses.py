@@ -2,12 +2,30 @@
 from __future__ import annotations
 
 import json
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
 
+class BaseHookResponse(ABC):
+    """Abstract base class for hook responses."""
+
+    @abstractmethod
+    def to_json(self) -> str:
+        """Serialize to Claude Code expected JSON format."""
+        ...
+
+    def should_return(self) -> bool:
+        """Whether this response should be returned (stop handler chain).
+
+        Override in subclasses for custom behavior.
+        Default: always return.
+        """
+        return True
+
+
 @dataclass
-class HookResponse:
+class HookResponse(BaseHookResponse):
     """Response from a hook handler."""
 
     decision: str | None = None
@@ -35,6 +53,10 @@ class HookResponse:
             output["continue"] = False
 
         return json.dumps(output) if output else ""
+
+    def should_return(self) -> bool:
+        """Only return deny/block responses."""
+        return self.decision in ("deny", "block")
 
 
 def allow(
@@ -83,7 +105,7 @@ def block(reason: str) -> HookResponse:
 
 
 @dataclass
-class PermissionHookResponse:
+class PermissionHookResponse(BaseHookResponse):
     """Response for PermissionRequest hooks."""
 
     behavior: str  # "allow" or "deny"

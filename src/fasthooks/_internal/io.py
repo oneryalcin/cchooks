@@ -5,7 +5,7 @@ import json
 import sys
 from typing import IO, Any, cast
 
-from fasthooks.responses import HookResponse, PermissionHookResponse
+from fasthooks.responses import BaseHookResponse
 
 
 def read_stdin(stdin: IO[str] | None = None) -> dict[str, Any]:
@@ -29,13 +29,11 @@ def read_stdin(stdin: IO[str] | None = None) -> dict[str, Any]:
         return {}
 
 
-def write_stdout(
-    response: HookResponse | PermissionHookResponse, stdout: IO[str] | None = None
-) -> None:
+def write_stdout(response: BaseHookResponse, stdout: IO[str] | None = None) -> None:
     """Write hook response JSON to stdout.
 
     Args:
-        response: The response to write (HookResponse or PermissionHookResponse)
+        response: The response to write
         stdout: Output stream, defaults to sys.stdout
     """
     if stdout is None:
