@@ -94,12 +94,17 @@ Add to your `settings.json`:
 ### Responses
 
 ```python
-from fasthooks import allow, deny, block
+from fasthooks import allow, deny, block, approve_permission, deny_permission
 
 return allow()                              # Proceed
 return allow(message="Approved by hook")    # With message
 return deny("Reason shown to Claude")       # Block tool
 return block("Continue working on X")       # For Stop hooks
+
+# For PermissionRequest hooks
+return approve_permission()                 # Auto-approve permission
+return approve_permission(modify={"command": "safe"})  # Approve with modified input
+return deny_permission("Not allowed")       # Deny permission
 ```
 
 ### Tool Decorators
@@ -120,6 +125,8 @@ return block("Continue working on X")       # For Stop hooks
 @app.on_pre_compact()                    # Before compaction
 @app.on_prompt()                         # User submits prompt
 @app.on_notification()                   # Notification sent
+@app.on_permission("Bash")               # Permission dialog shown (tool-specific)
+@app.on_permission()                     # Permission dialog (catch-all)
 ```
 
 ### Typed Events

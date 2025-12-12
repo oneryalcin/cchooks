@@ -150,3 +150,73 @@ class MockEvent:
             hook_event_name="PreCompact",
             trigger=trigger,
         )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PermissionRequest events
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def permission_bash(
+        command: str,
+        *,
+        description: str | None = None,
+        session_id: str = "test-session",
+        cwd: str = "/workspace",
+    ) -> Bash:
+        """Create a Bash PermissionRequest event."""
+        tool_input: dict[str, Any] = {"command": command}
+        if description:
+            tool_input["description"] = description
+
+        return Bash(
+            session_id=session_id,
+            cwd=cwd,
+            permission_mode="default",
+            hook_event_name="PermissionRequest",
+            tool_name="Bash",
+            tool_input=tool_input,
+            tool_use_id="test-tool-use",
+        )
+
+    @staticmethod
+    def permission_write(
+        file_path: str,
+        content: str = "",
+        *,
+        session_id: str = "test-session",
+        cwd: str = "/workspace",
+    ) -> Write:
+        """Create a Write PermissionRequest event."""
+        return Write(
+            session_id=session_id,
+            cwd=cwd,
+            permission_mode="default",
+            hook_event_name="PermissionRequest",
+            tool_name="Write",
+            tool_input={"file_path": file_path, "content": content},
+            tool_use_id="test-tool-use",
+        )
+
+    @staticmethod
+    def permission_edit(
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        *,
+        session_id: str = "test-session",
+        cwd: str = "/workspace",
+    ) -> Edit:
+        """Create an Edit PermissionRequest event."""
+        return Edit(
+            session_id=session_id,
+            cwd=cwd,
+            permission_mode="default",
+            hook_event_name="PermissionRequest",
+            tool_name="Edit",
+            tool_input={
+                "file_path": file_path,
+                "old_string": old_string,
+                "new_string": new_string,
+            },
+            tool_use_id="test-tool-use",
+        )

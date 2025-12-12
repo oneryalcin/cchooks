@@ -38,7 +38,7 @@ from fasthooks.events.tools import (
 )
 from fasthooks.logging import EventLogger
 from fasthooks.registry import HandlerEntry, HandlerRegistry
-from fasthooks.responses import HookResponse
+from fasthooks.responses import HookResponse, PermissionHookResponse
 
 # Map tool names to typed event classes
 TOOL_EVENT_MAP: dict[str, type[ToolEvent]] = {
@@ -118,6 +118,10 @@ class HookApp(HandlerRegistry):
         for tool, handlers in blueprint._post_tool_handlers.items():
             self._post_tool_handlers[tool].extend(handlers)
 
+        # Copy permission handlers
+        for tool, handlers in blueprint._permission_handlers.items():
+            self._permission_handlers[tool].extend(handlers)
+
         # Copy lifecycle handlers
         for event_type, handlers in blueprint._lifecycle_handlers.items():
             self._lifecycle_handlers[event_type].extend(handlers)
@@ -169,7 +173,9 @@ class HookApp(HandlerRegistry):
         if response:
             write_stdout(response, stdout)
 
-    async def _dispatch(self, data: dict[str, Any]) -> HookResponse | None:
+    async def _dispatch(
+        self, data: dict[str, Any]
+    ) -> HookResponse | PermissionHookResponse | None:
         """Dispatch event to appropriate handlers.
 
         Args:
@@ -199,6 +205,16 @@ class HookApp(HandlerRegistry):
             handlers = (
                 self._post_tool_handlers.get(tool_name, [])
                 + self._post_tool_handlers.get("*", [])
+            )
+            event = self._parse_tool_event(tool_name, data)
+            return await self._run_with_middleware(handlers, event)
+
+        elif hook_type == "PermissionRequest":
+            tool_name = data.get("tool_name", "")
+            # Combine tool-specific handlers with catch-all ("*") handlers
+            handlers = (
+                self._permission_handlers.get(tool_name, [])
+                + self._permission_handlers.get("*", [])
             )
             event = self._parse_tool_event(tool_name, data)
             return await self._run_with_middleware(handlers, event)
@@ -235,7 +251,7 @@ class HookApp(HandlerRegistry):
         self,
         handlers: list[HandlerEntry],
         event: BaseEvent,
-    ) -> HookResponse | None:
+    ) -> HookResponse | PermissionHookResponse | None:
         """Run handlers wrapped in middleware chain.
 
         Args:
@@ -246,11 +262,15 @@ class HookApp(HandlerRegistry):
             Response from middleware or handlers
         """
         # Build the innermost function (actual handler execution)
-        async def run_handlers(evt: BaseEvent) -> HookResponse | None:
+        async def run_handlers(
+            evt: BaseEvent,
+        ) -> HookResponse | PermissionHookResponse | None:
             return await self._run_handlers(handlers, evt)
 
         # Wrap with middleware (outermost first)
-        chain: Callable[[BaseEvent], Coroutine[Any, Any, HookResponse | None]] = run_handlers
+        chain: Callable[
+            [BaseEvent], Coroutine[Any, Any, HookResponse | PermissionHookResponse | None]
+        ] = run_handlers
         for mw in reversed(self._middleware):
             chain = self._wrap_middleware(mw, chain)
 
@@ -259,21 +279,33 @@ class HookApp(HandlerRegistry):
     def _wrap_middleware(
         self,
         middleware: Callable[..., Any],
-        next_fn: Callable[[BaseEvent], Coroutine[Any, Any, HookResponse | None]],
-    ) -> Callable[[BaseEvent], Coroutine[Any, Any, HookResponse | None]]:
+        next_fn: Callable[
+            [BaseEvent], Coroutine[Any, Any, HookResponse | PermissionHookResponse | None]
+        ],
+    ) -> Callable[
+        [BaseEvent], Coroutine[Any, Any, HookResponse | PermissionHookResponse | None]
+    ]:
         """Wrap a middleware around the next function in chain."""
 
         if inspect.iscoroutinefunction(middleware):
             # Async middleware - can await next_fn directly
-            async def async_wrapped(event: BaseEvent) -> HookResponse | None:
-                result: HookResponse | None = await middleware(event, next_fn)
+            async def async_wrapped(
+                event: BaseEvent,
+            ) -> HookResponse | PermissionHookResponse | None:
+                result: HookResponse | PermissionHookResponse | None = await middleware(
+                    event, next_fn
+                )
                 return result
 
             return async_wrapped
         else:
             # Sync middleware - provide sync call_next that bridges to async
-            async def sync_wrapped(event: BaseEvent) -> HookResponse | None:
-                def sync_call_next(evt: BaseEvent) -> HookResponse | None:
+            async def sync_wrapped(
+                event: BaseEvent,
+            ) -> HookResponse | PermissionHookResponse | None:
+                def sync_call_next(
+                    evt: BaseEvent,
+                ) -> HookResponse | PermissionHookResponse | None:
                     # Bridge from threadpool back to event loop
                     return anyio.from_thread.run(next_fn, evt)
 
@@ -287,7 +319,7 @@ class HookApp(HandlerRegistry):
         self,
         handlers: list[HandlerEntry],
         event: BaseEvent,
-    ) -> HookResponse | None:
+    ) -> HookResponse | PermissionHookResponse | None:
         """Run handlers in order, stopping on deny/block.
 
         Args:
@@ -315,14 +347,21 @@ class HookApp(HandlerRegistry):
 
                 # Run handler (supports async handlers)
                 if inspect.iscoroutinefunction(handler):
-                    response: HookResponse | None = await handler(event, **deps)
+                    response: HookResponse | PermissionHookResponse | None = await handler(
+                        event, **deps
+                    )
                 else:
                     response = await anyio.to_thread.run_sync(
                         functools.partial(handler, event, **deps)
                     )
 
-                if response and response.decision in ("deny", "block"):
-                    return response
+                # Check for actionable response
+                if response:
+                    if isinstance(response, PermissionHookResponse):
+                        # Return any PermissionHookResponse (allow or deny)
+                        return response
+                    elif response.decision in ("deny", "block"):
+                        return response
             except Exception as e:
                 # Log and continue (fail open)
                 print(f"[fasthooks] Handler {handler.__name__} failed: {e}", file=sys.stderr)
