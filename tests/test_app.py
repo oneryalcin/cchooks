@@ -3,6 +3,7 @@ import json
 from io import StringIO
 
 from fasthooks import HookApp, allow, deny
+from fasthooks.testing import MockEvent, TestClient
 
 
 class TestHookAppBasic:
@@ -121,3 +122,67 @@ class TestHookAppHandlers:
             app.run(stdin=stdin, stdout=stdout)
 
         assert calls == ["Write", "Edit"]  # Bash not included
+
+
+class TestCatchAllHandlers:
+    """Tests for catch-all handler support."""
+
+    def test_pre_tool_catch_all(self):
+        """Catch-all handler receives all tool events."""
+        from fasthooks import HookApp, allow
+
+        app = HookApp()
+        calls = []
+
+        @app.pre_tool()  # No args = catch-all
+        def catch_all(event):
+            calls.append(event.tool_name)
+            return allow()
+
+        client = TestClient(app)
+
+        # Send different tool events
+        client.send(MockEvent.bash(command="ls"))
+        client.send(MockEvent.write(file_path="/test.txt"))
+        client.send(MockEvent.read(file_path="/test.txt"))
+
+        assert calls == ["Bash", "Write", "Read"]
+
+    def test_catch_all_with_specific(self):
+        """Catch-all runs after specific handlers."""
+        from fasthooks import HookApp, allow, deny
+
+        app = HookApp()
+        order = []
+
+        @app.pre_tool("Bash")
+        def bash_specific(event):
+            order.append("bash_specific")
+            return allow()
+
+        @app.pre_tool()  # Catch-all
+        def catch_all(event):
+            order.append("catch_all")
+            return allow()
+
+        client = TestClient(app)
+        client.send(MockEvent.bash(command="ls"))
+
+        # Specific runs first, then catch-all
+        assert order == ["bash_specific", "catch_all"]
+
+    def test_catch_all_deny_stops_chain(self):
+        """Catch-all deny stops further processing."""
+        from fasthooks import HookApp, deny
+
+        app = HookApp()
+
+        @app.pre_tool()
+        def deny_all(event):
+            return deny("blocked")
+
+        client = TestClient(app)
+        response = client.send(MockEvent.bash(command="ls"))
+
+        assert response is not None
+        assert response.decision == "deny"

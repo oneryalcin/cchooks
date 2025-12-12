@@ -36,17 +36,25 @@ class Blueprint:
         self._lifecycle_handlers: dict[str, list[tuple[Callable, Callable | None]]] = defaultdict(list)
 
     def pre_tool(self, *tools: str, when: Callable | None = None) -> Callable:
-        """Decorator to register a PreToolUse handler."""
+        """Decorator to register a PreToolUse handler.
+
+        If no tools specified, registers as catch-all for ALL tools.
+        """
         def decorator(func: Callable) -> Callable:
-            for tool in tools:
+            targets = tools if tools else ("*",)
+            for tool in targets:
                 self._pre_tool_handlers[tool].append((func, when))
             return func
         return decorator
 
     def post_tool(self, *tools: str, when: Callable | None = None) -> Callable:
-        """Decorator to register a PostToolUse handler."""
+        """Decorator to register a PostToolUse handler.
+
+        If no tools specified, registers as catch-all for ALL tools.
+        """
         def decorator(func: Callable) -> Callable:
-            for tool in tools:
+            targets = tools if tools else ("*",)
+            for tool in targets:
                 self._post_tool_handlers[tool].append((func, when))
             return func
         return decorator

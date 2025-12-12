@@ -58,3 +58,23 @@ class State(dict):
         state_dir = Path(state_dir)
         state_file = state_dir / f"{session_id}.json"
         return cls(state_file)
+
+
+class NullState(dict):
+    """No-op state that doesn't persist.
+
+    Used when no state_dir is configured. Behaves like dict
+    but save() does nothing.
+    """
+
+    def save(self) -> None:
+        """No-op save."""
+        pass
+
+    def __enter__(self) -> "NullState":
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Context manager exit - no-op."""
+        pass

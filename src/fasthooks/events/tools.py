@@ -14,6 +14,7 @@ class ToolEvent(BaseEvent):
     tool_name: str
     tool_input: dict
     tool_use_id: str
+    tool_response: dict | None = None  # Only populated for PostToolUse events
 
 
 class Bash(ToolEvent):
@@ -162,6 +163,25 @@ class Task(ToolEvent):
     def run_in_background(self) -> bool | None:
         """Whether to run in background."""
         return self.tool_input.get("run_in_background")
+
+    @property
+    def agent_id(self) -> str | None:
+        """Agent ID from PostToolUse response."""
+        if self.tool_response:
+            return self.tool_response.get("agentId")
+        return None
+
+    @property
+    def response_text(self) -> str:
+        """Extract text content from Task response (PostToolUse only)."""
+        if not self.tool_response:
+            return ""
+        content = self.tool_response.get("content", [])
+        texts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                texts.append(block.get("text", ""))
+        return "\n".join(texts)
 
 
 class WebSearch(ToolEvent):

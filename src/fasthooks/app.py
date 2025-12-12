@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import IO, Any, get_type_hints
 
 from fasthooks._internal.io import read_stdin, write_stdout
-from fasthooks.depends.state import State
+from fasthooks.depends.state import NullState, State
+from fasthooks.logging import EventLogger
 from fasthooks.depends.transcript import Transcript
 from fasthooks.events.base import BaseEvent
 from fasthooks.events.lifecycle import (
@@ -55,15 +56,23 @@ TOOL_EVENT_MAP: dict[str, type[ToolEvent]] = {
 class HookApp:
     """Main application for registering and running hook handlers."""
 
-    def __init__(self, state_dir: str | None = None, log_level: str = "INFO"):
+    def __init__(
+        self,
+        state_dir: str | None = None,
+        log_dir: str | None = None,
+        log_level: str = "INFO",
+    ):
         """Initialize HookApp.
 
         Args:
             state_dir: Directory for persistent state files
+            log_dir: Directory for JSONL event logs (enables built-in logging)
             log_level: Logging verbosity
         """
         self.state_dir = state_dir
+        self.log_dir = log_dir
         self.log_level = log_level
+        self._logger = EventLogger(log_dir) if log_dir else None
         # Handlers stored as (func, guard) tuples
         self._pre_tool_handlers: dict[str, list[HandlerEntry]] = defaultdict(list)
         self._post_tool_handlers: dict[str, list[HandlerEntry]] = defaultdict(list)
@@ -125,14 +134,16 @@ class HookApp:
         """Decorator to register a PreToolUse handler.
 
         Args:
-            *tools: Tool names to match (e.g., "Bash", "Write")
+            *tools: Tool names to match (e.g., "Bash", "Write").
+                    If empty, registers as catch-all handler for ALL tools.
             when: Optional guard function that receives event, returns bool
 
         Returns:
             Decorator function
         """
         def decorator(func: Callable) -> Callable:
-            for tool in tools:
+            targets = tools if tools else ("*",)  # Empty = catch-all
+            for tool in targets:
                 self._pre_tool_handlers[tool].append((func, when))
             return func
         return decorator
@@ -141,14 +152,16 @@ class HookApp:
         """Decorator to register a PostToolUse handler.
 
         Args:
-            *tools: Tool names to match
+            *tools: Tool names to match.
+                    If empty, registers as catch-all handler for ALL tools.
             when: Optional guard function
 
         Returns:
             Decorator function
         """
         def decorator(func: Callable) -> Callable:
-            for tool in tools:
+            targets = tools if tools else ("*",)  # Empty = catch-all
+            for tool in targets:
                 self._post_tool_handlers[tool].append((func, when))
             return func
         return decorator
@@ -238,6 +251,13 @@ class HookApp:
         if not data:
             return
 
+        # Log event BEFORE dispatch (runs for ALL events)
+        if self._logger:
+            try:
+                self._logger.log(data)
+            except Exception:
+                pass  # Don't fail hook on logging error
+
         # Route to handlers
         response = self._dispatch(data)
 
@@ -259,13 +279,21 @@ class HookApp:
         # Tool events
         if hook_type == "PreToolUse":
             tool_name = data.get("tool_name", "")
-            handlers = self._pre_tool_handlers.get(tool_name, [])
+            # Combine tool-specific handlers with catch-all ("*") handlers
+            handlers = (
+                self._pre_tool_handlers.get(tool_name, [])
+                + self._pre_tool_handlers.get("*", [])
+            )
             event = self._parse_tool_event(tool_name, data)
             return self._run_with_middleware(handlers, event)
 
         elif hook_type == "PostToolUse":
             tool_name = data.get("tool_name", "")
-            handlers = self._post_tool_handlers.get(tool_name, [])
+            # Combine tool-specific handlers with catch-all ("*") handlers
+            handlers = (
+                self._post_tool_handlers.get(tool_name, [])
+                + self._post_tool_handlers.get("*", [])
+            )
             event = self._parse_tool_event(tool_name, data)
             return self._run_with_middleware(handlers, event)
 
@@ -402,7 +430,7 @@ class HookApp:
                         state_dir=Path(self.state_dir),
                     )
                 else:
-                    # No state_dir configured, provide empty state
-                    deps[param_name] = State(Path("/dev/null"))
+                    # No state_dir configured, provide no-op state
+                    deps[param_name] = NullState()
 
         return deps
