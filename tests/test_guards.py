@@ -2,7 +2,7 @@
 import json
 from io import StringIO
 
-from cchooks import HookApp, allow, deny
+from fasthooks import HookApp, allow, deny
 
 
 class TestGuardsPreTool:
@@ -158,7 +158,7 @@ class TestGuardsCombined:
         app = HookApp()
         calls = []
 
-        from cchooks.depends import Transcript
+        from fasthooks.depends import Transcript
 
         @app.on_stop(when=lambda e: e.stop_hook_active)
         def handle_active_stop(event, transcript: Transcript):

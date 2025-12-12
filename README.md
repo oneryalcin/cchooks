@@ -1,9 +1,9 @@
-# cchooks
+# fasthooks
 
 Delightful Claude Code hooks with a FastAPI-like developer experience.
 
 ```python
-from cchooks import HookApp, deny
+from fasthooks import HookApp, deny
 
 app = HookApp()
 
@@ -29,13 +29,13 @@ if __name__ == "__main__":
 ## Installation
 
 ```bash
-pip install cchooks
+pip install fasthooks
 ```
 
 Or with uv:
 
 ```bash
-uv add cchooks
+uv add fasthooks
 ```
 
 ## Quick Start
@@ -43,14 +43,14 @@ uv add cchooks
 ### 1. Create a hooks project
 
 ```bash
-cchooks init my-hooks
+fasthooks init my-hooks
 cd my-hooks
 ```
 
 ### 2. Edit hooks.py
 
 ```python
-from cchooks import HookApp, allow, deny
+from fasthooks import HookApp, allow, deny
 
 app = HookApp()
 
@@ -94,7 +94,7 @@ Add to your `settings.json`:
 ### Responses
 
 ```python
-from cchooks import allow, deny, block
+from fasthooks import allow, deny, block
 
 return allow()                              # Proceed
 return allow(message="Approved by hook")    # With message
@@ -146,7 +146,7 @@ def handle_edit(event):
 ### Dependency Injection
 
 ```python
-from cchooks.depends import Transcript, State
+from fasthooks.depends import Transcript, State
 
 @app.on_stop()
 def with_deps(event, transcript: Transcript, state: State):
@@ -176,7 +176,7 @@ def startup_only(event):
 ### Blueprints
 
 ```python
-from cchooks import Blueprint
+from fasthooks import Blueprint
 
 security = Blueprint("security")
 
@@ -205,7 +205,7 @@ def timing(event, call_next):
 ## Testing
 
 ```python
-from cchooks.testing import MockEvent, TestClient
+from fasthooks.testing import MockEvent, TestClient
 
 def test_no_rm_rf():
     app = HookApp()
@@ -231,13 +231,13 @@ def test_no_rm_rf():
 
 ```bash
 # Initialize a new project
-cchooks init my-hooks
+fasthooks init my-hooks
 
 # Show help
-cchooks --help
+fasthooks --help
 
 # Run hooks (called by Claude Code)
-cchooks run hooks.py
+fasthooks run hooks.py
 ```
 
 ## License

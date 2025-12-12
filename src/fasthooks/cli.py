@@ -1,4 +1,4 @@
-"""CLI for cchooks - Delightful Claude Code hooks."""
+"""CLI for fasthooks - Delightful Claude Code hooks."""
 from __future__ import annotations
 
 import sys
@@ -17,7 +17,7 @@ app = typer.Typer(
 
 HOOKS_TEMPLATE = '''\
 """Claude Code hooks."""
-from cchooks import HookApp, allow, deny
+from fasthooks import HookApp, allow, deny
 
 app = HookApp()
 
@@ -47,7 +47,7 @@ version = "0.1.0"
 description = "Claude Code hooks"
 requires-python = ">=3.11"
 dependencies = [
-    "cchooks",
+    "fasthooks",
 ]
 
 [project.optional-dependencies]
@@ -60,7 +60,7 @@ dev = [
 def version_callback(value: bool) -> None:
     """Show version and exit."""
     if value:
-        print("[green]cchooks[/green] version: [bold]0.1.0[/bold]")
+        print("[green]fasthooks[/green] version: [bold]0.1.0[/bold]")
         raise typer.Exit()
 
 
@@ -78,11 +78,11 @@ def callback(
     ] = None,
 ) -> None:
     """
-    [bold]cchooks[/bold] - Delightful Claude Code hooks 🪝
+    [bold]fasthooks[/bold] - Delightful Claude Code hooks 🪝
 
     Build hooks for Claude Code with a FastAPI-like developer experience.
 
-    Read more: [link=https://github.com/oneryalcin/cchooks]https://github.com/oneryalcin/cchooks[/link]
+    Read more: [link=https://github.com/oneryalcin/fasthooks]https://github.com/oneryalcin/fasthooks[/link]
     """
     pass
 
@@ -103,7 +103,7 @@ def init(
 
     Example:
 
-        $ cchooks init my-hooks
+        $ fasthooks init my-hooks
 
         $ cd my-hooks && uv sync
     """
@@ -163,7 +163,7 @@ def run(
 
     Your hooks.py should contain:
 
-        from cchooks import HookApp
+        from fasthooks import HookApp
 
         app = HookApp()
 
@@ -183,7 +183,7 @@ def run(
     if not path.exists():
         print(f"[red]Error:[/red] File [bold]{path}[/bold] not found")
         print()
-        print("Create a hooks project with: [bold]cchooks init my-hooks[/bold]")
+        print("Create a hooks project with: [bold]fasthooks init my-hooks[/bold]")
         raise typer.Exit(code=1)
 
     # Execute the hooks file

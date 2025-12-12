@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cchooks.events.base import BaseEvent
-from cchooks.responses import HookResponse
+from fasthooks.events.base import BaseEvent
+from fasthooks.responses import HookResponse
 
 if TYPE_CHECKING:
-    from cchooks.app import HookApp
+    from fasthooks.app import HookApp
 
 
 class TestClient:

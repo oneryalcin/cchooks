@@ -1,7 +1,7 @@
 """cchooks - Delightful Claude Code hooks."""
-from cchooks.app import HookApp
-from cchooks.blueprint import Blueprint
-from cchooks.responses import HookResponse, allow, block, deny
+from fasthooks.app import HookApp
+from fasthooks.blueprint import Blueprint
+from fasthooks.responses import HookResponse, allow, block, deny
 
 __all__ = [
     "Blueprint",

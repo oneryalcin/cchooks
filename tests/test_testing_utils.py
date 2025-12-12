@@ -2,8 +2,8 @@
 import json
 from io import StringIO
 
-from cchooks import HookApp, allow, deny
-from cchooks.testing import MockEvent, TestClient
+from fasthooks import HookApp, allow, deny
+from fasthooks.testing import MockEvent, TestClient
 
 
 class TestMockEvent:
@@ -131,7 +131,7 @@ class TestTestClient:
         app = HookApp(state_dir=str(tmp_path))
         captured = []
 
-        from cchooks.depends import State
+        from fasthooks.depends import State
 
         @app.on_stop()
         def handler(event, state: State):

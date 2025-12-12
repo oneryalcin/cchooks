@@ -1,7 +1,7 @@
 """Tests for response builders."""
 import json
 
-from cchooks import allow, deny, block
+from fasthooks import allow, deny, block
 
 
 class TestAllow:

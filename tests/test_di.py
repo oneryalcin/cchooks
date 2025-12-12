@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from cchooks import HookApp, allow
-from cchooks.depends import State, Transcript
+from fasthooks import HookApp, allow
+from fasthooks.depends import State, Transcript
 
 
 class TestDITranscript:

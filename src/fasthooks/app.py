@@ -8,11 +8,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import IO, Any, get_type_hints
 
-from cchooks._internal.io import read_stdin, write_stdout
-from cchooks.depends.state import State
-from cchooks.depends.transcript import Transcript
-from cchooks.events.base import BaseEvent
-from cchooks.events.lifecycle import (
+from fasthooks._internal.io import read_stdin, write_stdout
+from fasthooks.depends.state import State
+from fasthooks.depends.transcript import Transcript
+from fasthooks.events.base import BaseEvent
+from fasthooks.events.lifecycle import (
     Notification,
     PreCompact,
     SessionEnd,
@@ -21,7 +21,7 @@ from cchooks.events.lifecycle import (
     SubagentStop,
     UserPromptSubmit,
 )
-from cchooks.events.tools import (
+from fasthooks.events.tools import (
     Bash,
     Edit,
     Glob,
@@ -33,7 +33,7 @@ from cchooks.events.tools import (
     WebSearch,
     Write,
 )
-from cchooks.responses import HookResponse
+from fasthooks.responses import HookResponse
 
 # Type alias for handler with optional guard
 HandlerEntry = tuple[Callable, Callable | None]
@@ -103,7 +103,7 @@ class HookApp:
         Args:
             blueprint: Blueprint to include
         """
-        from cchooks.blueprint import Blueprint
+        from fasthooks.blueprint import Blueprint
 
         # Copy pre_tool handlers
         for tool, handlers in blueprint._pre_tool_handlers.items():

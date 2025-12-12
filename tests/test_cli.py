@@ -11,7 +11,7 @@ class TestCLIRun:
     def test_cli_run_help(self):
         """cchooks run --help shows usage."""
         result = subprocess.run(
-            [sys.executable, "-m", "cchooks", "run", "--help"],
+            [sys.executable, "-m", "fasthooks", "run", "--help"],
             capture_output=True,
             text=True,
         )
@@ -25,7 +25,7 @@ class TestCLIInit:
         project_dir = tmp_path / "my-hooks"
 
         result = subprocess.run(
-            [sys.executable, "-m", "cchooks", "init", str(project_dir)],
+            [sys.executable, "-m", "fasthooks", "init", str(project_dir)],
             capture_output=True,
             text=True,
         )
@@ -40,7 +40,7 @@ class TestCLIInit:
         project_dir = tmp_path / "my-hooks"
 
         subprocess.run(
-            [sys.executable, "-m", "cchooks", "init", str(project_dir)],
+            [sys.executable, "-m", "fasthooks", "init", str(project_dir)],
             capture_output=True,
             text=True,
         )
@@ -49,7 +49,7 @@ class TestCLIInit:
         content = hooks_file.read_text()
 
         # Should have basic structure
-        assert "from cchooks import" in content
+        assert "from fasthooks import" in content
         assert "HookApp" in content
         assert "app.run()" in content
 
@@ -60,7 +60,7 @@ class TestCLIInit:
         (project_dir / "hooks.py").write_text("existing")
 
         result = subprocess.run(
-            [sys.executable, "-m", "cchooks", "init", str(project_dir)],
+            [sys.executable, "-m", "fasthooks", "init", str(project_dir)],
             capture_output=True,
             text=True,
         )
@@ -73,7 +73,7 @@ class TestCLIHelp:
     def test_cli_help(self):
         """cchooks --help shows available commands."""
         result = subprocess.run(
-            [sys.executable, "-m", "cchooks", "--help"],
+            [sys.executable, "-m", "fasthooks", "--help"],
             capture_output=True,
             text=True,
         )

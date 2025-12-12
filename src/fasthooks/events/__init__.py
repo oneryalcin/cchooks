@@ -1,6 +1,6 @@
 """Event models for Claude Code hooks."""
-from cchooks.events.base import BaseEvent
-from cchooks.events.lifecycle import (
+from fasthooks.events.base import BaseEvent
+from fasthooks.events.lifecycle import (
     Notification,
     PermissionRequest,
     PreCompact,
@@ -10,7 +10,7 @@ from cchooks.events.lifecycle import (
     SubagentStop,
     UserPromptSubmit,
 )
-from cchooks.events.tools import (
+from fasthooks.events.tools import (
     Bash,
     Edit,
     Glob,

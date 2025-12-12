@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import ConfigDict
 
-from cchooks.events.base import BaseEvent
+from fasthooks.events.base import BaseEvent
 
 
 class Stop(BaseEvent):

@@ -2,8 +2,8 @@
 import json
 from io import StringIO
 
-from cchooks._internal.io import read_stdin, write_stdout
-from cchooks import HookResponse
+from fasthooks._internal.io import read_stdin, write_stdout
+from fasthooks import HookResponse
 
 
 class TestReadStdin:

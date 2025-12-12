@@ -5,7 +5,7 @@ import json
 import sys
 from typing import IO, Any
 
-from cchooks.responses import HookResponse
+from fasthooks.responses import HookResponse
 
 
 def read_stdin(stdin: IO[str] | None = None) -> dict[str, Any]:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from cchooks.depends import Transcript
+from fasthooks.depends import Transcript
 
 
 class TestTranscriptBasic:

@@ -1,5 +1,5 @@
 """Tests for lifecycle event models."""
-from cchooks.events import (
+from fasthooks.events import (
     Stop,
     SubagentStop,
     SessionStart,

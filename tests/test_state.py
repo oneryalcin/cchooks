@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from cchooks.depends import State
+from fasthooks.depends import State
 
 
 class TestStateBasic:

@@ -1,8 +1,8 @@
 """Mock event factories for testing."""
 from __future__ import annotations
 
-from cchooks.events.lifecycle import PreCompact, SessionStart, Stop
-from cchooks.events.tools import Bash, Edit, Read, Write
+from fasthooks.events.lifecycle import PreCompact, SessionStart, Stop
+from fasthooks.events.tools import Bash, Edit, Read, Write
 
 
 class MockEvent:

@@ -1,7 +1,7 @@
 """Tests for base event model."""
 import pytest
 
-from cchooks.events import BaseEvent
+from fasthooks.events import BaseEvent
 
 
 class TestBaseEvent:

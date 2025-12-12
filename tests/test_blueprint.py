@@ -2,8 +2,8 @@
 import json
 from io import StringIO
 
-from cchooks import HookApp, allow, deny
-from cchooks.blueprint import Blueprint
+from fasthooks import HookApp, allow, deny
+from fasthooks.blueprint import Blueprint
 
 
 class TestBlueprintBasic:

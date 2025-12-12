@@ -1,24 +1,27 @@
 [project]
-name = "cchooks"
-version = "0.1.0"
+name = "fasthooks"
+version = "0.1.1"
 description = "Delightful Claude Code hooks - FastAPI-like DX for building hooks"
 readme = "README.md"
 authors = [
     { name = "Mehmet Oner Yalcin", email = "oneryalcin@gmail.com" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
-    "pydantic>=2.12.5",
-    "rich>=14.2.0",
-    "typer>=0.20.0",
+    "pydantic>=2.0",
+    "rich>=13.0",
+    "typer>=0.9.0",
 ]
 
 [project.scripts]
-cchooks = "cchooks.cli:main"
+fasthooks = "fasthooks.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fasthooks"]
 
 [dependency-groups]
 dev = [
@@ -37,7 +40,7 @@ select = ["E", "F", "I", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --cov=cchooks --cov-report=term-missing"
+addopts = "-v --cov=fasthooks --cov-report=term-missing"
 asyncio_mode = "auto"
 
 [tool.mypy]
@@ -45,5 +48,5 @@ strict = true
 python_version = "3.12"
 
 [tool.coverage.run]
-source = ["src/cchooks"]
+source = ["src/fasthooks"]
 branch = true
