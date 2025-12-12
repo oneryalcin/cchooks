@@ -124,6 +124,94 @@ class TestHookAppHandlers:
         assert calls == ["Write", "Edit"]  # Bash not included
 
 
+class TestAsyncHandlers:
+    """Tests for async handler support."""
+
+    def test_async_handler_allow(self):
+        """Async handler can return allow."""
+        app = HookApp()
+
+        @app.pre_tool("Bash")
+        async def async_check(event):
+            return allow()
+
+        client = TestClient(app)
+        response = client.send(MockEvent.bash(command="ls"))
+        assert response is None  # allowed
+
+    def test_async_handler_deny(self):
+        """Async handler can return deny."""
+        app = HookApp()
+
+        @app.pre_tool("Bash")
+        async def async_check(event):
+            return deny("async blocked")
+
+        client = TestClient(app)
+        response = client.send(MockEvent.bash(command="ls"))
+        assert response is not None
+        assert response.decision == "deny"
+        assert "async" in response.reason
+
+    def test_mixed_sync_async_handlers(self):
+        """Sync and async handlers work together."""
+        app = HookApp()
+        calls = []
+
+        @app.pre_tool("Bash")
+        def sync_handler(event):
+            calls.append("sync")
+            return allow()
+
+        @app.pre_tool("Bash")
+        async def async_handler(event):
+            calls.append("async")
+            return allow()
+
+        client = TestClient(app)
+        client.send(MockEvent.bash(command="ls"))
+        assert calls == ["sync", "async"]
+
+    def test_async_handler_with_await(self):
+        """Async handler can use await."""
+        import anyio
+
+        app = HookApp()
+        awaited = []
+
+        @app.pre_tool("Bash")
+        async def async_check(event):
+            await anyio.sleep(0.001)  # Small async operation
+            awaited.append(True)
+            return allow()
+
+        client = TestClient(app)
+        client.send(MockEvent.bash(command="ls"))
+        assert awaited == [True]
+
+    def test_async_guard(self):
+        """Async guard function works."""
+        app = HookApp()
+
+        async def is_dangerous(event):
+            return "rm" in event.command
+
+        @app.pre_tool("Bash", when=is_dangerous)
+        async def block_dangerous(event):
+            return deny("dangerous command")
+
+        client = TestClient(app)
+
+        # Safe command - guard returns False, handler not called
+        response = client.send(MockEvent.bash(command="ls"))
+        assert response is None
+
+        # Dangerous command - guard returns True, handler called
+        response = client.send(MockEvent.bash(command="rm -rf"))
+        assert response is not None
+        assert response.decision == "deny"
+
+
 class TestCatchAllHandlers:
     """Tests for catch-all handler support."""
 

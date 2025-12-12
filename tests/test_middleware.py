@@ -126,3 +126,101 @@ class TestMiddleware:
         app.run(stdin=stdin, stdout=StringIO())
 
         assert captured == ["Stop"]
+
+
+class TestAsyncMiddleware:
+    """Tests for async middleware support."""
+
+    def test_async_middleware(self):
+        """Async middleware works."""
+        app = HookApp()
+        log = []
+
+        @app.middleware
+        async def async_mw(event, call_next):
+            log.append("before")
+            response = await call_next(event)
+            log.append("after")
+            return response
+
+        @app.on_stop()
+        def handle_stop(event):
+            log.append("handler")
+            return allow()
+
+        stdin = StringIO(json.dumps({
+            "session_id": "test",
+            "cwd": "/workspace",
+            "permission_mode": "default",
+            "hook_event_name": "Stop",
+        }))
+        app.run(stdin=stdin, stdout=StringIO())
+
+        assert log == ["before", "handler", "after"]
+
+    def test_async_middleware_with_await(self):
+        """Async middleware can use await."""
+        import anyio
+
+        app = HookApp()
+        awaited = []
+
+        @app.middleware
+        async def async_mw(event, call_next):
+            await anyio.sleep(0.001)
+            awaited.append("middleware")
+            return await call_next(event)
+
+        @app.on_stop()
+        def handle_stop(event):
+            return allow()
+
+        stdin = StringIO(json.dumps({
+            "session_id": "test",
+            "cwd": "/workspace",
+            "permission_mode": "default",
+            "hook_event_name": "Stop",
+        }))
+        app.run(stdin=stdin, stdout=StringIO())
+
+        assert awaited == ["middleware"]
+
+    def test_mixed_sync_async_middleware(self):
+        """Sync and async middleware work together."""
+        app = HookApp()
+        log = []
+
+        @app.middleware
+        def sync_mw(event, call_next):
+            log.append("sync_before")
+            response = call_next(event)
+            log.append("sync_after")
+            return response
+
+        @app.middleware
+        async def async_mw(event, call_next):
+            log.append("async_before")
+            response = await call_next(event)
+            log.append("async_after")
+            return response
+
+        @app.on_stop()
+        def handle_stop(event):
+            log.append("handler")
+            return allow()
+
+        stdin = StringIO(json.dumps({
+            "session_id": "test",
+            "cwd": "/workspace",
+            "permission_mode": "default",
+            "hook_event_name": "Stop",
+        }))
+        app.run(stdin=stdin, stdout=StringIO())
+
+        assert log == [
+            "sync_before",
+            "async_before",
+            "handler",
+            "async_after",
+            "sync_after",
+        ]

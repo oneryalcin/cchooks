@@ -1,11 +1,14 @@
 """Main HookApp class."""
 from __future__ import annotations
 
+import functools
 import inspect
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import IO, Any, get_type_hints
+
+import anyio
 
 from fasthooks._internal.io import read_stdin, write_stdout
 from fasthooks.blueprint import Blueprint
@@ -134,6 +137,14 @@ class HookApp(HandlerRegistry):
             stdin: Input stream (default: sys.stdin)
             stdout: Output stream (default: sys.stdout)
         """
+        anyio.run(self._async_run, stdin, stdout)
+
+    async def _async_run(
+        self,
+        stdin: IO[str] | None = None,
+        stdout: IO[str] | None = None,
+    ) -> None:
+        """Async implementation of run()."""
         if stdin is None:
             stdin = sys.stdin
         if stdout is None:
@@ -152,13 +163,13 @@ class HookApp(HandlerRegistry):
                 pass  # Don't fail hook on logging error
 
         # Route to handlers
-        response = self._dispatch(data)
+        response = await self._dispatch(data)
 
         # Write output
         if response:
             write_stdout(response, stdout)
 
-    def _dispatch(self, data: dict[str, Any]) -> HookResponse | None:
+    async def _dispatch(self, data: dict[str, Any]) -> HookResponse | None:
         """Dispatch event to appropriate handlers.
 
         Args:
@@ -180,7 +191,7 @@ class HookApp(HandlerRegistry):
                 + self._pre_tool_handlers.get("*", [])
             )
             event = self._parse_tool_event(tool_name, data)
-            return self._run_with_middleware(handlers, event)
+            return await self._run_with_middleware(handlers, event)
 
         elif hook_type == "PostToolUse":
             tool_name = data.get("tool_name", "")
@@ -190,13 +201,13 @@ class HookApp(HandlerRegistry):
                 + self._post_tool_handlers.get("*", [])
             )
             event = self._parse_tool_event(tool_name, data)
-            return self._run_with_middleware(handlers, event)
+            return await self._run_with_middleware(handlers, event)
 
         # Lifecycle events
         elif hook_type in self._lifecycle_handlers:
             handlers = self._lifecycle_handlers[hook_type]
             event = self._parse_lifecycle_event(hook_type, data)
-            return self._run_with_middleware(handlers, event)
+            return await self._run_with_middleware(handlers, event)
 
         # No matching handlers
         return None
@@ -220,7 +231,7 @@ class HookApp(HandlerRegistry):
         event_class = event_classes.get(hook_type, BaseEvent)
         return event_class.model_validate(data)
 
-    def _run_with_middleware(
+    async def _run_with_middleware(
         self,
         handlers: list[HandlerEntry],
         event: BaseEvent,
@@ -235,30 +246,44 @@ class HookApp(HandlerRegistry):
             Response from middleware or handlers
         """
         # Build the innermost function (actual handler execution)
-        def run_handlers(evt: BaseEvent) -> HookResponse | None:
-            return self._run_handlers(handlers, evt)
+        async def run_handlers(evt: BaseEvent) -> HookResponse | None:
+            return await self._run_handlers(handlers, evt)
 
         # Wrap with middleware (outermost first)
-        chain: Callable[[BaseEvent], HookResponse | None] = run_handlers
+        chain: Callable[[BaseEvent], Coroutine[Any, Any, HookResponse | None]] = run_handlers
         for mw in reversed(self._middleware):
             chain = self._wrap_middleware(mw, chain)
 
-        return chain(event)
+        return await chain(event)
 
     def _wrap_middleware(
         self,
         middleware: Callable[..., Any],
-        next_fn: Callable[[BaseEvent], HookResponse | None],
-    ) -> Callable[[BaseEvent], HookResponse | None]:
+        next_fn: Callable[[BaseEvent], Coroutine[Any, Any, HookResponse | None]],
+    ) -> Callable[[BaseEvent], Coroutine[Any, Any, HookResponse | None]]:
         """Wrap a middleware around the next function in chain."""
 
-        def wrapped(event: BaseEvent) -> HookResponse | None:
-            result: HookResponse | None = middleware(event, next_fn)
-            return result
+        if inspect.iscoroutinefunction(middleware):
+            # Async middleware - can await next_fn directly
+            async def async_wrapped(event: BaseEvent) -> HookResponse | None:
+                result: HookResponse | None = await middleware(event, next_fn)
+                return result
 
-        return wrapped
+            return async_wrapped
+        else:
+            # Sync middleware - provide sync call_next that bridges to async
+            async def sync_wrapped(event: BaseEvent) -> HookResponse | None:
+                def sync_call_next(evt: BaseEvent) -> HookResponse | None:
+                    # Bridge from threadpool back to event loop
+                    return anyio.from_thread.run(next_fn, evt)
 
-    def _run_handlers(
+                return await anyio.to_thread.run_sync(
+                    functools.partial(middleware, event, sync_call_next)
+                )
+
+            return sync_wrapped
+
+    async def _run_handlers(
         self,
         handlers: list[HandlerEntry],
         event: BaseEvent,
@@ -274,19 +299,33 @@ class HookApp(HandlerRegistry):
         """
         for handler, guard in handlers:
             try:
-                # Check guard condition
+                # Check guard condition (supports async guards)
                 if guard is not None:
-                    if not guard(event):
+                    if inspect.iscoroutinefunction(guard):
+                        guard_result = await guard(event)
+                    else:
+                        guard_result = await anyio.to_thread.run_sync(
+                            functools.partial(guard, event)
+                        )
+                    if not guard_result:
                         continue  # Guard failed, skip handler
 
                 # Build dependencies based on type hints
                 deps = self._resolve_dependencies(handler, event)
-                response: HookResponse | None = handler(event, **deps)
+
+                # Run handler (supports async handlers)
+                if inspect.iscoroutinefunction(handler):
+                    response: HookResponse | None = await handler(event, **deps)
+                else:
+                    response = await anyio.to_thread.run_sync(
+                        functools.partial(handler, event, **deps)
+                    )
+
                 if response and response.decision in ("deny", "block"):
                     return response
             except Exception as e:
                 # Log and continue (fail open)
-                print(f"[cchooks] Handler {handler.__name__} failed: {e}", file=sys.stderr)
+                print(f"[fasthooks] Handler {handler.__name__} failed: {e}", file=sys.stderr)
                 continue
 
         return None

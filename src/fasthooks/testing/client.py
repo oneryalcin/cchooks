@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import anyio
+
 from fasthooks.events.base import BaseEvent
 from fasthooks.responses import HookResponse
 
@@ -46,7 +48,7 @@ class TestClient:
         """
         # Convert event to dict for dispatch
         data = event.model_dump()
-        return self.app._dispatch(data)
+        return anyio.run(self.app._dispatch, data)
 
     def send_raw(self, data: dict[str, Any]) -> HookResponse | None:
         """Send raw event data to the app.
@@ -57,4 +59,4 @@ class TestClient:
         Returns:
             HookResponse if deny/block, None if allowed
         """
-        return self.app._dispatch(data)
+        return anyio.run(self.app._dispatch, data)
