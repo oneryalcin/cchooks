@@ -1,8 +1,9 @@
 [project]
 name = "fasthooks"
-version = "0.1.1"
+version = "0.1.2"
 description = "Delightful Claude Code hooks - FastAPI-like DX for building hooks"
 readme = "README.md"
+keywords = ["claude", "hooks", "cli", "ai", "anthropic"]
 authors = [
     { name = "Mehmet Oner Yalcin", email = "oneryalcin@gmail.com" }
 ]
@@ -12,6 +13,11 @@ dependencies = [
     "rich>=13.0",
     "typer>=0.9.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/oneryalcin/fasthooks"
+Repository = "https://github.com/oneryalcin/fasthooks"
+Issues = "https://github.com/oneryalcin/fasthooks/issues"
 
 [project.scripts]
 fasthooks = "fasthooks.cli:main"
