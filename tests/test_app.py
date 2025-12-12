@@ -2,7 +2,8 @@
 import json
 from io import StringIO
 
-from fasthooks import HookApp, allow, deny
+from fasthooks import HookApp, allow, approve_permission, deny, deny_permission
+from fasthooks.responses import PermissionHookResponse
 from fasthooks.testing import MockEvent, TestClient
 
 
@@ -274,3 +275,192 @@ class TestCatchAllHandlers:
 
         assert response is not None
         assert response.decision == "deny"
+
+
+class TestPermissionRequestHandlers:
+    """Tests for PermissionRequest handlers."""
+
+    def test_on_permission_approve(self):
+        """on_permission handler can approve permission request."""
+        app = HookApp()
+
+        @app.on_permission("Bash")
+        def auto_approve(event):
+            return approve_permission()
+
+        client = TestClient(app)
+        response = client.send(MockEvent.permission_bash(command="ls"))
+
+        assert response is not None
+        assert isinstance(response, PermissionHookResponse)
+        assert response.behavior == "allow"
+
+    def test_on_permission_deny(self):
+        """on_permission handler can deny permission request."""
+        app = HookApp()
+
+        @app.on_permission("Bash")
+        def deny_rm(event):
+            if "rm" in event.command:
+                return deny_permission("rm not allowed")
+            return approve_permission()
+
+        client = TestClient(app)
+
+        # Safe command
+        response = client.send(MockEvent.permission_bash(command="ls"))
+        assert response.behavior == "allow"
+
+        # Dangerous command
+        response = client.send(MockEvent.permission_bash(command="rm -rf /"))
+        assert response.behavior == "deny"
+        assert response.message == "rm not allowed"
+
+    def test_on_permission_with_modify(self):
+        """on_permission handler can modify tool input."""
+        app = HookApp()
+
+        @app.on_permission("Bash")
+        def sanitize(event):
+            # Always replace command with safe version
+            return approve_permission(modify={"command": "echo safe"})
+
+        client = TestClient(app)
+        response = client.send(MockEvent.permission_bash(command="dangerous"))
+
+        assert response.behavior == "allow"
+        assert response.modify == {"command": "echo safe"}
+
+    def test_on_permission_catch_all(self):
+        """on_permission() with no args matches all tools."""
+        app = HookApp()
+        calls = []
+
+        @app.on_permission()  # catch-all
+        def log_all(event):
+            calls.append(event.tool_name)
+            return approve_permission()
+
+        client = TestClient(app)
+        client.send(MockEvent.permission_bash(command="ls"))
+        client.send(MockEvent.permission_write(file_path="/test.txt"))
+
+        assert calls == ["Bash", "Write"]
+
+    def test_on_permission_tool_specific_plus_catch_all(self):
+        """Tool-specific and catch-all handlers both run."""
+        app = HookApp()
+        order = []
+
+        @app.on_permission("Bash")
+        def bash_specific(event):
+            order.append("bash_specific")
+            return None  # Continue to next handler
+
+        @app.on_permission()
+        def catch_all(event):
+            order.append("catch_all")
+            return approve_permission()
+
+        client = TestClient(app)
+        client.send(MockEvent.permission_bash(command="ls"))
+
+        # Specific runs first, then catch-all
+        assert order == ["bash_specific", "catch_all"]
+
+    def test_on_permission_not_called_for_pre_tool(self):
+        """on_permission handler not called for PreToolUse events."""
+        app = HookApp()
+        permission_calls = []
+        pretool_calls = []
+
+        @app.on_permission("Bash")
+        def permission_handler(event):
+            permission_calls.append("permission")
+            return approve_permission()
+
+        @app.pre_tool("Bash")
+        def pretool_handler(event):
+            pretool_calls.append("pretool")
+            return allow()
+
+        client = TestClient(app)
+
+        # Send PreToolUse
+        client.send(MockEvent.bash(command="ls"))
+        assert pretool_calls == ["pretool"]
+        assert permission_calls == []
+
+        # Send PermissionRequest
+        client.send(MockEvent.permission_bash(command="ls"))
+        assert permission_calls == ["permission"]
+
+    def test_on_permission_multiple_tools(self):
+        """on_permission can match multiple tools."""
+        app = HookApp()
+        calls = []
+
+        @app.on_permission("Write", "Edit")
+        def file_ops(event):
+            calls.append(event.tool_name)
+            return approve_permission()
+
+        client = TestClient(app)
+        client.send(MockEvent.permission_write(file_path="/test.txt"))
+        client.send(MockEvent.permission_edit("/test.txt", "old", "new"))
+        client.send(MockEvent.permission_bash(command="ls"))
+
+        assert calls == ["Write", "Edit"]
+
+    def test_on_permission_async(self):
+        """Async on_permission handler works."""
+        app = HookApp()
+
+        @app.on_permission("Bash")
+        async def async_handler(event):
+            return approve_permission()
+
+        client = TestClient(app)
+        response = client.send(MockEvent.permission_bash(command="ls"))
+
+        assert response.behavior == "allow"
+
+    def test_on_permission_with_guard(self):
+        """on_permission handler with guard function."""
+        app = HookApp()
+
+        def is_dangerous(event):
+            return "rm" in event.command
+
+        @app.on_permission("Bash", when=is_dangerous)
+        def block_dangerous(event):
+            return deny_permission("dangerous command blocked")
+
+        @app.on_permission("Bash")
+        def allow_safe(event):
+            return approve_permission()
+
+        client = TestClient(app)
+
+        # Safe - guard fails, first handler skipped, second runs
+        response = client.send(MockEvent.permission_bash(command="ls"))
+        assert response.behavior == "allow"
+
+        # Dangerous - guard passes, first handler runs
+        response = client.send(MockEvent.permission_bash(command="rm -rf"))
+        assert response.behavior == "deny"
+
+    def test_permission_request_typed_event(self):
+        """PermissionRequest events get typed tool properties."""
+        app = HookApp()
+        captured = []
+
+        @app.on_permission("Bash")
+        def capture_command(event):
+            captured.append(event.command)  # Uses typed Bash.command property
+            return approve_permission()
+
+        client = TestClient(app)
+        client.send(MockEvent.permission_bash(command="ls -la"))
+
+        assert captured == ["ls -la"]

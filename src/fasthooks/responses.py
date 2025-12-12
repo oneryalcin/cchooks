@@ -75,3 +75,67 @@ def block(reason: str) -> HookResponse:
         HookResponse with block decision
     """
     return HookResponse(decision="block", reason=reason)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PermissionRequest responses (different JSON format from PreToolUse)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class PermissionHookResponse:
+    """Response for PermissionRequest hooks."""
+
+    behavior: str  # "allow" or "deny"
+    message: str | None = None
+    interrupt: bool = False
+    modify: dict[str, Any] | None = None
+
+    def to_json(self) -> str:
+        """Serialize to Claude Code PermissionRequest format."""
+        decision: dict[str, Any] = {"behavior": self.behavior}
+
+        if self.behavior == "allow" and self.modify:
+            decision["updatedInput"] = self.modify
+        elif self.behavior == "deny":
+            if self.message:
+                decision["message"] = self.message
+            if self.interrupt:
+                decision["interrupt"] = True
+
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": decision,
+            }
+        }
+        return json.dumps(output)
+
+
+def approve_permission(
+    *, modify: dict[str, Any] | None = None
+) -> PermissionHookResponse:
+    """Approve a permission request.
+
+    Args:
+        modify: Optional dict to modify tool input before execution
+
+    Returns:
+        PermissionHookResponse with allow behavior
+    """
+    return PermissionHookResponse(behavior="allow", modify=modify)
+
+
+def deny_permission(
+    message: str | None = None, *, interrupt: bool = False
+) -> PermissionHookResponse:
+    """Deny a permission request.
+
+    Args:
+        message: Explanation shown to Claude
+        interrupt: If True, stops Claude entirely
+
+    Returns:
+        PermissionHookResponse with deny behavior
+    """
+    return PermissionHookResponse(behavior="deny", message=message, interrupt=interrupt)

@@ -19,6 +19,7 @@ class HandlerRegistry:
     def __init__(self) -> None:
         self._pre_tool_handlers: dict[str, list[HandlerEntry]] = defaultdict(list)
         self._post_tool_handlers: dict[str, list[HandlerEntry]] = defaultdict(list)
+        self._permission_handlers: dict[str, list[HandlerEntry]] = defaultdict(list)
         self._lifecycle_handlers: dict[str, list[HandlerEntry]] = defaultdict(list)
 
     # ═══════════════════════════════════════════════════════════════
@@ -151,12 +152,23 @@ class HandlerRegistry:
         return decorator
 
     def on_permission(
-        self, when: Callable[..., Any] | None = None
+        self, *tools: str, when: Callable[..., Any] | None = None
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-        """Decorator for PermissionRequest events."""
+        """Decorator for PermissionRequest events.
+
+        Args:
+            *tools: Tool names to match (e.g., "Bash", "Write").
+                    If empty, registers as catch-all handler for ALL tools.
+            when: Optional guard function
+
+        Returns:
+            Decorator function
+        """
 
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-            self._lifecycle_handlers["PermissionRequest"].append((func, when))
+            targets = tools if tools else ("*",)
+            for tool in targets:
+                self._permission_handlers[tool].append((func, when))
             return func
 
         return decorator
