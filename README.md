@@ -18,12 +18,15 @@ if __name__ == "__main__":
 
 ## Features
 
+- **Async support** - `async def` handlers, guards, and middleware
 - **Typed events** - Autocomplete for `event.command`, `event.file_path`, etc.
 - **Decorators** - `@app.pre_tool("Bash")`, `@app.on_stop()`, `@app.on_session_start()`
+- **Catch-all handlers** - `@app.pre_tool()` to handle all tools
 - **Dependency injection** - `def handler(event, transcript: Transcript, state: State)`
 - **Blueprints** - Compose handlers from multiple modules
 - **Middleware** - Cross-cutting concerns like timing and logging
 - **Guards** - `@app.pre_tool("Bash", when=lambda e: "sudo" in e.command)`
+- **Built-in logging** - JSONL event logs with `HookApp(log_dir="path")`
 - **Testing utilities** - `MockEvent` and `TestClient` for easy testing
 
 ## Installation
@@ -173,6 +176,49 @@ def startup_only(event):
     pass
 ```
 
+### Catch-All Handlers
+
+```python
+@app.pre_tool()  # No args = matches all tools
+def log_all_tools(event):
+    print(f"Tool: {event.tool_name}")
+    return allow()
+
+@app.post_tool()  # Runs after any tool
+def after_any_tool(event):
+    print(f"Completed: {event.tool_name}")
+```
+
+### Async Handlers
+
+Handlers, guards, and middleware can all be async:
+
+```python
+@app.pre_tool("Bash")
+async def async_check(event):
+    # Make async API calls, DB queries, etc.
+    result = await external_validation(event.command)
+    if result.blocked:
+        return deny(result.reason)
+    return allow()
+
+# Async guards
+async def is_allowed(event):
+    return await check_permissions(event)
+
+@app.pre_tool("Write", when=is_allowed)
+async def guarded_handler(event):
+    ...
+
+# Async middleware
+@app.middleware
+async def async_timing(event, call_next):
+    start = time.time()
+    response = await call_next(event)
+    print(f"Took {time.time() - start:.3f}s")
+    return response
+```
+
 ### Blueprints
 
 ```python
@@ -200,6 +246,16 @@ def timing(event, call_next):
     response = call_next(event)
     print(f"Took {time.time() - start:.3f}s")
     return response
+```
+
+### Built-in Logging
+
+```python
+app = HookApp(log_dir="~/.fasthooks/logs")
+# Writes JSONL to hooks-{session_id}.jsonl with:
+# - Timestamps, session IDs, event types
+# - Flattened tool inputs (command, file_path, etc.)
+# - Tool responses for PostToolUse events
 ```
 
 ## Testing
