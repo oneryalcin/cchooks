@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Annotated, Union
+from typing import Annotated
 
 import typer
 from rich import print
@@ -67,7 +67,7 @@ def version_callback(value: bool) -> None:
 @app.callback()
 def callback(
     version: Annotated[
-        Union[bool, None],
+        bool | None,
         typer.Option(
             "--version",
             "-v",
@@ -111,7 +111,7 @@ def init(
     if path.exists():
         existing_files = list(path.iterdir())
         if existing_files:
-            print(f"[red]Error:[/red] Directory [bold]{path}[/bold] already exists and is not empty")
+            print(f"[red]Error:[/red] Directory [bold]{path}[/bold] already exists and not empty")
             raise typer.Exit(code=1)
 
     # Create directory
@@ -150,7 +150,7 @@ def init(
 @app.command()
 def run(
     path: Annotated[
-        Union[Path, None],
+        Path | None,
         typer.Argument(
             help="Path to hooks.py file (default: ./hooks.py)"
         ),

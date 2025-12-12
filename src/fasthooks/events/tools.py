@@ -1,6 +1,8 @@
 """Tool-specific event models with typed properties."""
 from __future__ import annotations
 
+from typing import Any, cast
+
 from pydantic import ConfigDict
 
 from fasthooks.events.base import BaseEvent
@@ -12,9 +14,9 @@ class ToolEvent(BaseEvent):
     model_config = ConfigDict(extra="ignore")
 
     tool_name: str
-    tool_input: dict
+    tool_input: dict[str, Any]
     tool_use_id: str
-    tool_response: dict | None = None  # Only populated for PostToolUse events
+    tool_response: dict[str, Any] | None = None  # Only for PostToolUse events
 
 
 class Bash(ToolEvent):
@@ -23,7 +25,7 @@ class Bash(ToolEvent):
     @property
     def command(self) -> str:
         """The bash command to execute."""
-        return self.tool_input.get("command", "")
+        return cast(str, self.tool_input.get("command", ""))
 
     @property
     def description(self) -> str | None:
@@ -47,12 +49,12 @@ class Write(ToolEvent):
     @property
     def file_path(self) -> str:
         """Path to file being written."""
-        return self.tool_input.get("file_path", "")
+        return cast(str, self.tool_input.get("file_path", ""))
 
     @property
     def content(self) -> str:
         """Content to write."""
-        return self.tool_input.get("content", "")
+        return cast(str, self.tool_input.get("content", ""))
 
 
 class Read(ToolEvent):
@@ -61,7 +63,7 @@ class Read(ToolEvent):
     @property
     def file_path(self) -> str:
         """Path to file being read."""
-        return self.tool_input.get("file_path", "")
+        return cast(str, self.tool_input.get("file_path", ""))
 
     @property
     def offset(self) -> int | None:
@@ -80,17 +82,17 @@ class Edit(ToolEvent):
     @property
     def file_path(self) -> str:
         """Path to file being edited."""
-        return self.tool_input.get("file_path", "")
+        return cast(str, self.tool_input.get("file_path", ""))
 
     @property
     def old_string(self) -> str:
         """String to replace."""
-        return self.tool_input.get("old_string", "")
+        return cast(str, self.tool_input.get("old_string", ""))
 
     @property
     def new_string(self) -> str:
         """Replacement string."""
-        return self.tool_input.get("new_string", "")
+        return cast(str, self.tool_input.get("new_string", ""))
 
     @property
     def replace_all(self) -> bool | None:
@@ -104,7 +106,7 @@ class Grep(ToolEvent):
     @property
     def pattern(self) -> str:
         """Search pattern."""
-        return self.tool_input.get("pattern", "")
+        return cast(str, self.tool_input.get("pattern", ""))
 
     @property
     def path(self) -> str | None:
@@ -128,7 +130,7 @@ class Glob(ToolEvent):
     @property
     def pattern(self) -> str:
         """Glob pattern."""
-        return self.tool_input.get("pattern", "")
+        return cast(str, self.tool_input.get("pattern", ""))
 
     @property
     def path(self) -> str | None:
@@ -142,12 +144,12 @@ class Task(ToolEvent):
     @property
     def description(self) -> str:
         """Task description."""
-        return self.tool_input.get("description", "")
+        return cast(str, self.tool_input.get("description", ""))
 
     @property
     def prompt(self) -> str:
         """Task prompt."""
-        return self.tool_input.get("prompt", "")
+        return cast(str, self.tool_input.get("prompt", ""))
 
     @property
     def subagent_type(self) -> str | None:
@@ -180,7 +182,7 @@ class Task(ToolEvent):
         texts = []
         for block in content:
             if isinstance(block, dict) and block.get("type") == "text":
-                texts.append(block.get("text", ""))
+                texts.append(cast(str, block.get("text", "")))
         return "\n".join(texts)
 
 
@@ -190,7 +192,7 @@ class WebSearch(ToolEvent):
     @property
     def query(self) -> str:
         """Search query."""
-        return self.tool_input.get("query", "")
+        return cast(str, self.tool_input.get("query", ""))
 
 
 class WebFetch(ToolEvent):
@@ -199,9 +201,9 @@ class WebFetch(ToolEvent):
     @property
     def url(self) -> str:
         """URL to fetch."""
-        return self.tool_input.get("url", "")
+        return cast(str, self.tool_input.get("url", ""))
 
     @property
     def prompt(self) -> str:
         """Prompt for processing."""
-        return self.tool_input.get("prompt", "")
+        return cast(str, self.tool_input.get("prompt", ""))

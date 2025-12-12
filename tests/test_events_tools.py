@@ -1,7 +1,6 @@
 """Tests for tool-specific event models."""
-import pytest
 
-from fasthooks.events import Bash, Write, Read, Edit, Grep, Glob, Task
+from fasthooks.events import Bash, Edit, Glob, Grep, Read, Task, Write
 
 
 class TestBashEvent:

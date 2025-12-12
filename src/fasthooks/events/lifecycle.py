@@ -1,6 +1,8 @@
 """Lifecycle event models (Stop, SessionStart, etc.)."""
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import ConfigDict
 
 from fasthooks.events.base import BaseEvent
@@ -71,4 +73,4 @@ class PermissionRequest(BaseEvent):
     model_config = ConfigDict(extra="ignore")
 
     tool_name: str
-    tool_input: dict
+    tool_input: dict[str, Any]

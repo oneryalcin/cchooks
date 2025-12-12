@@ -3,14 +3,13 @@ from __future__ import annotations
 
 import inspect
 import sys
-from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
 from typing import IO, Any, get_type_hints
 
 from fasthooks._internal.io import read_stdin, write_stdout
+from fasthooks.blueprint import Blueprint
 from fasthooks.depends.state import NullState, State
-from fasthooks.logging import EventLogger
 from fasthooks.depends.transcript import Transcript
 from fasthooks.events.base import BaseEvent
 from fasthooks.events.lifecycle import (
@@ -34,10 +33,9 @@ from fasthooks.events.tools import (
     WebSearch,
     Write,
 )
+from fasthooks.logging import EventLogger
+from fasthooks.registry import HandlerEntry, HandlerRegistry
 from fasthooks.responses import HookResponse
-
-# Type alias for handler with optional guard
-HandlerEntry = tuple[Callable, Callable | None]
 
 # Map tool names to typed event classes
 TOOL_EVENT_MAP: dict[str, type[ToolEvent]] = {
@@ -53,7 +51,7 @@ TOOL_EVENT_MAP: dict[str, type[ToolEvent]] = {
 }
 
 
-class HookApp:
+class HookApp(HandlerRegistry):
     """Main application for registering and running hook handlers."""
 
     def __init__(
@@ -69,21 +67,18 @@ class HookApp:
             log_dir: Directory for JSONL event logs (enables built-in logging)
             log_level: Logging verbosity
         """
+        super().__init__()
         self.state_dir = state_dir
         self.log_dir = log_dir
         self.log_level = log_level
         self._logger = EventLogger(log_dir) if log_dir else None
-        # Handlers stored as (func, guard) tuples
-        self._pre_tool_handlers: dict[str, list[HandlerEntry]] = defaultdict(list)
-        self._post_tool_handlers: dict[str, list[HandlerEntry]] = defaultdict(list)
-        self._lifecycle_handlers: dict[str, list[HandlerEntry]] = defaultdict(list)
-        self._middleware: list[Callable] = []
+        self._middleware: list[Callable[..., Any]] = []
 
     # ═══════════════════════════════════════════════════════════════
     # Middleware
     # ═══════════════════════════════════════════════════════════════
 
-    def middleware(self, func: Callable) -> Callable:
+    def middleware(self, func: Callable[..., Any]) -> Callable[..., Any]:
         """Decorator to register middleware.
 
         Middleware wraps all handler calls and can:
@@ -106,14 +101,12 @@ class HookApp:
     # Blueprint
     # ═══════════════════════════════════════════════════════════════
 
-    def include(self, blueprint: "Blueprint") -> None:
+    def include(self, blueprint: Blueprint) -> None:
         """Include a blueprint's handlers.
 
         Args:
             blueprint: Blueprint to include
         """
-        from fasthooks.blueprint import Blueprint
-
         # Copy pre_tool handlers
         for tool, handlers in blueprint._pre_tool_handlers.items():
             self._pre_tool_handlers[tool].extend(handlers)
@@ -125,106 +118,6 @@ class HookApp:
         # Copy lifecycle handlers
         for event_type, handlers in blueprint._lifecycle_handlers.items():
             self._lifecycle_handlers[event_type].extend(handlers)
-
-    # ═══════════════════════════════════════════════════════════════
-    # Tool Decorators
-    # ═══════════════════════════════════════════════════════════════
-
-    def pre_tool(self, *tools: str, when: Callable | None = None) -> Callable:
-        """Decorator to register a PreToolUse handler.
-
-        Args:
-            *tools: Tool names to match (e.g., "Bash", "Write").
-                    If empty, registers as catch-all handler for ALL tools.
-            when: Optional guard function that receives event, returns bool
-
-        Returns:
-            Decorator function
-        """
-        def decorator(func: Callable) -> Callable:
-            targets = tools if tools else ("*",)  # Empty = catch-all
-            for tool in targets:
-                self._pre_tool_handlers[tool].append((func, when))
-            return func
-        return decorator
-
-    def post_tool(self, *tools: str, when: Callable | None = None) -> Callable:
-        """Decorator to register a PostToolUse handler.
-
-        Args:
-            *tools: Tool names to match.
-                    If empty, registers as catch-all handler for ALL tools.
-            when: Optional guard function
-
-        Returns:
-            Decorator function
-        """
-        def decorator(func: Callable) -> Callable:
-            targets = tools if tools else ("*",)  # Empty = catch-all
-            for tool in targets:
-                self._post_tool_handlers[tool].append((func, when))
-            return func
-        return decorator
-
-    # ═══════════════════════════════════════════════════════════════
-    # Lifecycle Decorators
-    # ═══════════════════════════════════════════════════════════════
-
-    def on_stop(self, when: Callable | None = None) -> Callable:
-        """Decorator for Stop events (main agent finished)."""
-        def decorator(func: Callable) -> Callable:
-            self._lifecycle_handlers["Stop"].append((func, when))
-            return func
-        return decorator
-
-    def on_subagent_stop(self, when: Callable | None = None) -> Callable:
-        """Decorator for SubagentStop events."""
-        def decorator(func: Callable) -> Callable:
-            self._lifecycle_handlers["SubagentStop"].append((func, when))
-            return func
-        return decorator
-
-    def on_session_start(self, when: Callable | None = None) -> Callable:
-        """Decorator for SessionStart events."""
-        def decorator(func: Callable) -> Callable:
-            self._lifecycle_handlers["SessionStart"].append((func, when))
-            return func
-        return decorator
-
-    def on_session_end(self, when: Callable | None = None) -> Callable:
-        """Decorator for SessionEnd events."""
-        def decorator(func: Callable) -> Callable:
-            self._lifecycle_handlers["SessionEnd"].append((func, when))
-            return func
-        return decorator
-
-    def on_pre_compact(self, when: Callable | None = None) -> Callable:
-        """Decorator for PreCompact events."""
-        def decorator(func: Callable) -> Callable:
-            self._lifecycle_handlers["PreCompact"].append((func, when))
-            return func
-        return decorator
-
-    def on_prompt(self, when: Callable | None = None) -> Callable:
-        """Decorator for UserPromptSubmit events."""
-        def decorator(func: Callable) -> Callable:
-            self._lifecycle_handlers["UserPromptSubmit"].append((func, when))
-            return func
-        return decorator
-
-    def on_notification(self, when: Callable | None = None) -> Callable:
-        """Decorator for Notification events."""
-        def decorator(func: Callable) -> Callable:
-            self._lifecycle_handlers["Notification"].append((func, when))
-            return func
-        return decorator
-
-    def on_permission(self, when: Callable | None = None) -> Callable:
-        """Decorator for PermissionRequest events."""
-        def decorator(func: Callable) -> Callable:
-            self._lifecycle_handlers["PermissionRequest"].append((func, when))
-            return func
-        return decorator
 
     # ═══════════════════════════════════════════════════════════════
     # Runtime
@@ -275,6 +168,8 @@ class HookApp:
             Response from first blocking handler, or None
         """
         hook_type = data.get("hook_event_name", "")
+        event: BaseEvent
+        handlers: list[HandlerEntry]
 
         # Tool events
         if hook_type == "PreToolUse":
@@ -344,7 +239,7 @@ class HookApp:
             return self._run_handlers(handlers, evt)
 
         # Wrap with middleware (outermost first)
-        chain = run_handlers
+        chain: Callable[[BaseEvent], HookResponse | None] = run_handlers
         for mw in reversed(self._middleware):
             chain = self._wrap_middleware(mw, chain)
 
@@ -352,12 +247,15 @@ class HookApp:
 
     def _wrap_middleware(
         self,
-        middleware: Callable,
-        next_fn: Callable,
-    ) -> Callable:
+        middleware: Callable[..., Any],
+        next_fn: Callable[[BaseEvent], HookResponse | None],
+    ) -> Callable[[BaseEvent], HookResponse | None]:
         """Wrap a middleware around the next function in chain."""
+
         def wrapped(event: BaseEvent) -> HookResponse | None:
-            return middleware(event, next_fn)
+            result: HookResponse | None = middleware(event, next_fn)
+            return result
+
         return wrapped
 
     def _run_handlers(
@@ -383,7 +281,7 @@ class HookApp:
 
                 # Build dependencies based on type hints
                 deps = self._resolve_dependencies(handler, event)
-                response = handler(event, **deps)
+                response: HookResponse | None = handler(event, **deps)
                 if response and response.decision in ("deny", "block"):
                     return response
             except Exception as e:
@@ -395,7 +293,7 @@ class HookApp:
 
     def _resolve_dependencies(
         self,
-        handler: Callable,
+        handler: Callable[..., Any],
         event: BaseEvent,
     ) -> dict[str, Any]:
         """Resolve dependencies for a handler based on type hints.

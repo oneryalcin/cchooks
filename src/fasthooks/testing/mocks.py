@@ -1,6 +1,8 @@
 """Mock event factories for testing."""
 from __future__ import annotations
 
+from typing import Any
+
 from fasthooks.events.lifecycle import PreCompact, SessionStart, Stop
 from fasthooks.events.tools import Bash, Edit, Read, Write
 
@@ -24,7 +26,7 @@ class MockEvent:
         cwd: str = "/workspace",
     ) -> Bash:
         """Create a Bash PreToolUse event."""
-        tool_input = {"command": command}
+        tool_input: dict[str, Any] = {"command": command}
         if description:
             tool_input["description"] = description
         if timeout:

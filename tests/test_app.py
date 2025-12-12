@@ -150,7 +150,7 @@ class TestCatchAllHandlers:
 
     def test_catch_all_with_specific(self):
         """Catch-all runs after specific handlers."""
-        from fasthooks import HookApp, allow, deny
+        from fasthooks import HookApp, allow
 
         app = HookApp()
         order = []
