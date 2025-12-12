@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -34,9 +35,9 @@ class Transcript:
     def __init__(self, path: str | None):
         self.path = path
         self._stats_cache: TranscriptStats | None = None
-        self._entries_cache: list[dict] | None = None
+        self._entries_cache: list[dict[str, Any]] | None = None
 
-    def _load_entries(self) -> list[dict]:
+    def _load_entries(self) -> list[dict[str, Any]]:
         """Load and cache transcript entries."""
         if self._entries_cache is not None:
             return self._entries_cache
@@ -144,7 +145,7 @@ class Transcript:
         return stats
 
     @property
-    def messages(self) -> list[dict]:
+    def messages(self) -> list[dict[str, Any]]:
         """Get all user/assistant messages."""
         entries = self._load_entries()
         return [e for e in entries if e.get("type") in ("user", "assistant")]

@@ -1,8 +1,5 @@
 """Tests for State dependency."""
 import json
-from pathlib import Path
-
-import pytest
 
 from fasthooks.depends import State
 

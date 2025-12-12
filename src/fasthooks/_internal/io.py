@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import IO, Any
+from typing import IO, Any, cast
 
 from fasthooks.responses import HookResponse
 
@@ -24,7 +24,7 @@ def read_stdin(stdin: IO[str] | None = None) -> dict[str, Any]:
         content = stdin.read()
         if not content.strip():
             return {}
-        return json.loads(content)
+        return cast(dict[str, Any], json.loads(content))
     except (json.JSONDecodeError, Exception):
         return {}
 

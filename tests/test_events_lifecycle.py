@@ -1,12 +1,12 @@
 """Tests for lifecycle event models."""
 from fasthooks.events import (
+    Notification,
+    PreCompact,
+    SessionEnd,
+    SessionStart,
     Stop,
     SubagentStop,
-    SessionStart,
-    SessionEnd,
-    PreCompact,
     UserPromptSubmit,
-    Notification,
 )
 
 

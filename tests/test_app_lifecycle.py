@@ -2,7 +2,7 @@
 import json
 from io import StringIO
 
-from fasthooks import HookApp, allow, deny, block
+from fasthooks import HookApp, allow, block, deny
 
 
 class TestOnStop:

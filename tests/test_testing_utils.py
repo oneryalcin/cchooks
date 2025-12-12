@@ -1,6 +1,4 @@
 """Tests for testing utilities."""
-import json
-from io import StringIO
 
 from fasthooks import HookApp, allow, deny
 from fasthooks.testing import MockEvent, TestClient
@@ -158,7 +156,7 @@ class TestTestClientRaw:
             return allow()
 
         client = TestClient(app)
-        response = client.send_raw({
+        client.send_raw({
             "session_id": "test",
             "cwd": "/workspace",
             "permission_mode": "default",

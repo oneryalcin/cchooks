@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
-class State(dict):
+class State(dict[str, Any]):
     """Persistent dict backed by JSON file.
 
     Behaves like a regular dict but can save/load from file.
@@ -27,7 +27,7 @@ class State(dict):
         if not self._file.exists():
             return {}
         try:
-            return json.loads(self._file.read_text())
+            return cast(dict[str, Any], json.loads(self._file.read_text()))
         except (json.JSONDecodeError, OSError):
             return {}
 
@@ -36,7 +36,7 @@ class State(dict):
         self._file.parent.mkdir(parents=True, exist_ok=True)
         self._file.write_text(json.dumps(dict(self), indent=2))
 
-    def __enter__(self) -> "State":
+    def __enter__(self) -> State:
         """Context manager entry."""
         return self
 
@@ -45,7 +45,7 @@ class State(dict):
         self.save()
 
     @classmethod
-    def for_session(cls, session_id: str, state_dir: Path | str) -> "State":
+    def for_session(cls, session_id: str, state_dir: Path | str) -> State:
         """Create state scoped to a session.
 
         Args:
@@ -60,7 +60,7 @@ class State(dict):
         return cls(state_file)
 
 
-class NullState(dict):
+class NullState(dict[str, Any]):
     """No-op state that doesn't persist.
 
     Used when no state_dir is configured. Behaves like dict
@@ -71,7 +71,7 @@ class NullState(dict):
         """No-op save."""
         pass
 
-    def __enter__(self) -> "NullState":
+    def __enter__(self) -> NullState:
         """Context manager entry."""
         return self
 

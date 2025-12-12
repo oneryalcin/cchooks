@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -11,14 +12,14 @@ class HookResponse:
 
     decision: str | None = None
     reason: str | None = None
-    modify: dict | None = None
+    modify: dict[str, Any] | None = None
     message: str | None = None
     interrupt: bool = False
     continue_: bool = True
 
     def to_json(self) -> str:
         """Serialize to Claude Code expected JSON format."""
-        output: dict = {}
+        output: dict[str, Any] = {}
 
         if self.decision and self.decision != "approve":
             output["decision"] = self.decision
@@ -36,7 +37,9 @@ class HookResponse:
         return json.dumps(output) if output else ""
 
 
-def allow(*, modify: dict | None = None, message: str | None = None) -> HookResponse:
+def allow(
+    *, modify: dict[str, Any] | None = None, message: str | None = None
+) -> HookResponse:
     """Allow the action to proceed.
 
     Args:

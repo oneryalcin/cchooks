@@ -27,7 +27,7 @@ class TestClient:
         assert response is None  # allowed
     """
 
-    def __init__(self, app: "HookApp"):
+    def __init__(self, app: HookApp):
         """Initialize TestClient.
 
         Args:

@@ -1,9 +1,6 @@
 """Tests for dependency injection."""
 import json
 from io import StringIO
-from pathlib import Path
-
-import pytest
 
 from fasthooks import HookApp, allow
 from fasthooks.depends import State, Transcript
@@ -17,7 +14,8 @@ class TestDITranscript:
         transcript_file.write_text(
             '{"type": "user", "timestamp": "2024-01-01T10:00:00Z"}\n'
             '{"type": "assistant", "timestamp": "2024-01-01T10:00:05Z", '
-            '"message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}], '
+            '"message": {"content": [{"type": "tool_use", "name": "Bash", '
+            '"input": {"command": "ls"}}], '
             '"usage": {"input_tokens": 100, "output_tokens": 50}}}\n'
         )
 
