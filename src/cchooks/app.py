@@ -8,7 +8,41 @@ from typing import IO, Any
 
 from cchooks._internal.io import read_stdin, write_stdout
 from cchooks.events.base import BaseEvent
+from cchooks.events.lifecycle import (
+    Notification,
+    PreCompact,
+    SessionEnd,
+    SessionStart,
+    Stop,
+    SubagentStop,
+    UserPromptSubmit,
+)
+from cchooks.events.tools import (
+    Bash,
+    Edit,
+    Glob,
+    Grep,
+    Read,
+    Task,
+    ToolEvent,
+    WebFetch,
+    WebSearch,
+    Write,
+)
 from cchooks.responses import HookResponse
+
+# Map tool names to typed event classes
+TOOL_EVENT_MAP: dict[str, type[ToolEvent]] = {
+    "Bash": Bash,
+    "Write": Write,
+    "Read": Read,
+    "Edit": Edit,
+    "Grep": Grep,
+    "Glob": Glob,
+    "Task": Task,
+    "WebSearch": WebSearch,
+    "WebFetch": WebFetch,
+}
 
 
 class HookApp:
@@ -26,6 +60,10 @@ class HookApp:
         self._pre_tool_handlers: dict[str, list[Callable]] = defaultdict(list)
         self._post_tool_handlers: dict[str, list[Callable]] = defaultdict(list)
         self._lifecycle_handlers: dict[str, list[Callable]] = defaultdict(list)
+
+    # ═══════════════════════════════════════════════════════════════
+    # Tool Decorators
+    # ═══════════════════════════════════════════════════════════════
 
     def pre_tool(self, *tools: str) -> Callable:
         """Decorator to register a PreToolUse handler.
@@ -57,6 +95,70 @@ class HookApp:
             return func
         return decorator
 
+    # ═══════════════════════════════════════════════════════════════
+    # Lifecycle Decorators
+    # ═══════════════════════════════════════════════════════════════
+
+    def on_stop(self) -> Callable:
+        """Decorator for Stop events (main agent finished)."""
+        def decorator(func: Callable) -> Callable:
+            self._lifecycle_handlers["Stop"].append(func)
+            return func
+        return decorator
+
+    def on_subagent_stop(self) -> Callable:
+        """Decorator for SubagentStop events."""
+        def decorator(func: Callable) -> Callable:
+            self._lifecycle_handlers["SubagentStop"].append(func)
+            return func
+        return decorator
+
+    def on_session_start(self) -> Callable:
+        """Decorator for SessionStart events."""
+        def decorator(func: Callable) -> Callable:
+            self._lifecycle_handlers["SessionStart"].append(func)
+            return func
+        return decorator
+
+    def on_session_end(self) -> Callable:
+        """Decorator for SessionEnd events."""
+        def decorator(func: Callable) -> Callable:
+            self._lifecycle_handlers["SessionEnd"].append(func)
+            return func
+        return decorator
+
+    def on_pre_compact(self) -> Callable:
+        """Decorator for PreCompact events."""
+        def decorator(func: Callable) -> Callable:
+            self._lifecycle_handlers["PreCompact"].append(func)
+            return func
+        return decorator
+
+    def on_prompt(self) -> Callable:
+        """Decorator for UserPromptSubmit events."""
+        def decorator(func: Callable) -> Callable:
+            self._lifecycle_handlers["UserPromptSubmit"].append(func)
+            return func
+        return decorator
+
+    def on_notification(self) -> Callable:
+        """Decorator for Notification events."""
+        def decorator(func: Callable) -> Callable:
+            self._lifecycle_handlers["Notification"].append(func)
+            return func
+        return decorator
+
+    def on_permission(self) -> Callable:
+        """Decorator for PermissionRequest events."""
+        def decorator(func: Callable) -> Callable:
+            self._lifecycle_handlers["PermissionRequest"].append(func)
+            return func
+        return decorator
+
+    # ═══════════════════════════════════════════════════════════════
+    # Runtime
+    # ═══════════════════════════════════════════════════════════════
+
     def run(
         self,
         stdin: IO[str] | None = None,
@@ -78,94 +180,82 @@ class HookApp:
         if not data:
             return
 
-        # Parse event
-        event = BaseEvent.model_validate(data)
-        # Store raw data for tool_input access
-        event._raw_data = data  # type: ignore
-
         # Route to handlers
-        response = self._dispatch(event, data)
+        response = self._dispatch(data)
 
         # Write output
         if response:
             write_stdout(response, stdout)
 
-    def _dispatch(self, event: BaseEvent, data: dict[str, Any]) -> HookResponse | None:
+    def _dispatch(self, data: dict[str, Any]) -> HookResponse | None:
         """Dispatch event to appropriate handlers.
 
         Args:
-            event: Parsed event
             data: Raw input data
 
         Returns:
             Response from first blocking handler, or None
         """
-        hook_type = event.hook_event_name
+        hook_type = data.get("hook_event_name", "")
 
+        # Tool events
         if hook_type == "PreToolUse":
             tool_name = data.get("tool_name", "")
             handlers = self._pre_tool_handlers.get(tool_name, [])
-            return self._run_handlers(handlers, event, data)
+            event = self._parse_tool_event(tool_name, data)
+            return self._run_handlers(handlers, event)
 
         elif hook_type == "PostToolUse":
             tool_name = data.get("tool_name", "")
             handlers = self._post_tool_handlers.get(tool_name, [])
-            return self._run_handlers(handlers, event, data)
+            event = self._parse_tool_event(tool_name, data)
+            return self._run_handlers(handlers, event)
+
+        # Lifecycle events
+        elif hook_type in self._lifecycle_handlers:
+            handlers = self._lifecycle_handlers[hook_type]
+            event = self._parse_lifecycle_event(hook_type, data)
+            return self._run_handlers(handlers, event)
 
         # No matching handlers
         return None
+
+    def _parse_tool_event(self, tool_name: str, data: dict[str, Any]) -> ToolEvent:
+        """Parse data into typed tool event."""
+        event_class = TOOL_EVENT_MAP.get(tool_name, ToolEvent)
+        return event_class.model_validate(data)
+
+    def _parse_lifecycle_event(self, hook_type: str, data: dict[str, Any]) -> BaseEvent:
+        """Parse data into typed lifecycle event."""
+        event_classes: dict[str, type[BaseEvent]] = {
+            "Stop": Stop,
+            "SubagentStop": SubagentStop,
+            "SessionStart": SessionStart,
+            "SessionEnd": SessionEnd,
+            "PreCompact": PreCompact,
+            "UserPromptSubmit": UserPromptSubmit,
+            "Notification": Notification,
+        }
+        event_class = event_classes.get(hook_type, BaseEvent)
+        return event_class.model_validate(data)
 
     def _run_handlers(
         self,
         handlers: list[Callable],
         event: BaseEvent,
-        data: dict[str, Any],
     ) -> HookResponse | None:
         """Run handlers in order, stopping on deny/block.
 
         Args:
             handlers: List of handler functions
-            event: Parsed event
-            data: Raw input data
+            event: Typed event object
 
         Returns:
             First deny/block response, or None
         """
-        # Create a simple event wrapper with tool_input access
-        class EventWrapper:
-            def __init__(self, base: BaseEvent, raw: dict):
-                self._base = base
-                self._raw = raw
-
-            @property
-            def session_id(self) -> str:
-                return self._base.session_id
-
-            @property
-            def cwd(self) -> str:
-                return self._base.cwd
-
-            @property
-            def permission_mode(self) -> str:
-                return self._base.permission_mode
-
-            @property
-            def hook_event_name(self) -> str:
-                return self._base.hook_event_name
-
-            @property
-            def tool_name(self) -> str:
-                return self._raw.get("tool_name", "")
-
-            @property
-            def tool_input(self) -> dict:
-                return self._raw.get("tool_input", {})
-
-        wrapper = EventWrapper(event, data)
-
         for handler in handlers:
             try:
-                response = handler(wrapper)
+                response = handler(event)
                 if response and response.decision in ("deny", "block"):
                     return response
             except Exception as e:

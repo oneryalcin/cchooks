@@ -21,6 +21,7 @@ class TestHookAppBasic:
             "hook_event_name": "PreToolUse",
             "tool_name": "Bash",
             "tool_input": {"command": "ls"},
+            "tool_use_id": "t1",
         }))
         stdout = StringIO()
         app.run(stdin=stdin, stdout=stdout)
@@ -48,6 +49,7 @@ class TestHookAppHandlers:
             "hook_event_name": "PreToolUse",
             "tool_name": "Bash",
             "tool_input": {"command": "ls"},
+            "tool_use_id": "t1",
         }))
         stdout = StringIO()
         app.run(stdin=stdin, stdout=stdout)
@@ -62,6 +64,7 @@ class TestHookAppHandlers:
             "hook_event_name": "PreToolUse",
             "tool_name": "Bash",
             "tool_input": {"command": "rm -rf /"},
+            "tool_use_id": "t2",
         }))
         stdout2 = StringIO()
         app.run(stdin=stdin2, stdout=stdout2)
@@ -88,6 +91,7 @@ class TestHookAppHandlers:
             "hook_event_name": "PreToolUse",
             "tool_name": "Write",
             "tool_input": {"file_path": "/test.txt"},
+            "tool_use_id": "t1",
         }))
         stdout = StringIO()
         app.run(stdin=stdin, stdout=stdout)
@@ -111,6 +115,7 @@ class TestHookAppHandlers:
                 "hook_event_name": "PreToolUse",
                 "tool_name": tool,
                 "tool_input": {},
+                "tool_use_id": "t1",
             }))
             stdout = StringIO()
             app.run(stdin=stdin, stdout=stdout)
