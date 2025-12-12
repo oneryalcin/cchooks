@@ -1,5 +1,22 @@
 # fasthooks
 
+<p align="center">
+  <em>Claude Code Hook SDK for Python</em>
+</p>
+
+<p align="center">
+<a href="https://pypi.org/project/fasthooks"><img src="https://img.shields.io/pypi/v/fasthooks?color=%2334D058&label=pypi" alt="PyPI version"></a>
+<a href="https://pypi.org/project/fasthooks"><img src="https://img.shields.io/pypi/dm/fasthooks?color=%2334D058&label=downloads" alt="Downloads"></a>
+<a href="https://github.com/oneryalcin/fasthooks"><img src="https://img.shields.io/github/stars/oneryalcin/fasthooks?style=flat&color=yellow" alt="GitHub stars"></a>
+<a href="https://github.com/oneryalcin/fasthooks/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+</p>
+
+<p align="center">
+<strong><a href="https://oneryalcin.github.io/fasthooks/">Documentation</a></strong> · <strong><a href="https://github.com/oneryalcin/fasthooks">GitHub</a></strong> · <strong><a href="https://pypi.org/project/fasthooks/">PyPI</a></strong>
+</p>
+
+---
+
 Delightful Claude Code hooks with a FastAPI-like developer experience.
 
 ```python
