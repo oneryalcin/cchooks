@@ -15,6 +15,9 @@ dependencies = [
     "typer>=0.9.0",
 ]
 
+[project.optional-dependencies]
+claude = ["claude-agent-sdk>=0.1.0"]
+
 [project.urls]
 Homepage = "https://github.com/oneryalcin/fasthooks"
 Repository = "https://github.com/oneryalcin/fasthooks"
