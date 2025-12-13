@@ -129,9 +129,9 @@ class InMemoryBackend(BaseBackend):
         task_result.set_running()
 
         try:
-            # Handle async functions
+            # Handle async functions - use anyio.run() to create event loop in thread
             if iscoroutinefunction(task.func):
-                result = anyio.from_thread.run(task.func, *args, **kwargs)
+                result = anyio.run(lambda: task.func(*args, **kwargs))
             else:
                 result = task.func(*args, **kwargs)
 

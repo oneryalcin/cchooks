@@ -68,6 +68,56 @@ def test_task_callable():
     assert add(2, 3) == 5
 
 
+def test_async_task_with_immediate_backend():
+    """Test async tasks work with ImmediateBackend."""
+
+    @task
+    async def async_multiply(x: int, y: int) -> int:
+        return x * y
+
+    backend = ImmediateBackend()
+    result = backend.enqueue(
+        async_multiply,
+        (3, 4),
+        {},
+        session_id="test",
+        key="multiply",
+    )
+
+    assert result.status == TaskStatus.COMPLETED
+    assert result.value == 12
+
+
+def test_async_task_with_inmemory_backend():
+    """Test async tasks work with InMemoryBackend."""
+
+    @task
+    async def async_add(a: int, b: int) -> int:
+        return a + b
+
+    backend = InMemoryBackend()
+    result = backend.enqueue(
+        async_add,
+        (5, 7),
+        {},
+        session_id="test",
+        key="add",
+    )
+
+    # Wait for completion
+    import time
+    deadline = time.time() + 5.0
+    while result.status == TaskStatus.PENDING or result.status == TaskStatus.RUNNING:
+        if time.time() > deadline:
+            raise TimeoutError("Task did not complete in time")
+        time.sleep(0.1)
+
+    assert result.status == TaskStatus.COMPLETED
+    assert result.value == 12
+
+    backend.shutdown()
+
+
 def test_task_result_status_transitions():
     """Test TaskResult status transitions."""
     result = TaskResult(

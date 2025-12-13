@@ -64,8 +64,8 @@ class ImmediateBackend(BaseBackend):
 
         try:
             if iscoroutinefunction(task.func):
-                # Run async function synchronously
-                result = anyio.from_thread.run(task.func, *args, **kwargs)
+                # Run async function synchronously with new event loop
+                result = anyio.run(lambda: task.func(*args, **kwargs))
             else:
                 result = task.func(*args, **kwargs)
 
