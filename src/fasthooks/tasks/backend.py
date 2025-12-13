@@ -104,11 +104,17 @@ class InMemoryBackend(BaseBackend):
         return f"{session_id}:{key}"
 
     def _cleanup_expired(self) -> None:
-        """Remove expired results (called lazily on access)."""
+        """Remove expired results (called lazily on access).
+
+        Only expires finished tasks (COMPLETED, FAILED, CANCELLED).
+        Running/pending tasks are never expired - TTL applies to results, not work.
+        """
         now = time()
         with self._lock:
             expired = [
-                k for k, v in self.results.items() if now - v.created_at > v.ttl
+                k
+                for k, v in self.results.items()
+                if v.is_finished and now - v.created_at > v.ttl
             ]
             for k in expired:
                 del self.results[k]

@@ -40,9 +40,13 @@ class ImmediateBackend(BaseBackend):
         return f"{session_id}:{key}"
 
     def _cleanup_expired(self) -> None:
-        """Remove expired results."""
+        """Remove expired results (only finished tasks)."""
         now = time()
-        expired = [k for k, v in self.results.items() if now - v.created_at > v.ttl]
+        expired = [
+            k
+            for k, v in self.results.items()
+            if v.is_finished and now - v.created_at > v.ttl
+        ]
         for k in expired:
             del self.results[k]
 

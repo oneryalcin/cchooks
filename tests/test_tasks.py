@@ -118,6 +118,54 @@ def test_async_task_with_inmemory_backend():
     backend.shutdown()
 
 
+def test_running_task_not_expired_by_ttl():
+    """Test that running tasks are not expired even if TTL < runtime."""
+
+    @task(ttl=1)  # 1 second TTL
+    def slow_task() -> str:
+        time.sleep(2)  # Takes longer than TTL
+        return "done"
+
+    backend = InMemoryBackend()
+    result = backend.enqueue(
+        slow_task,
+        (),
+        {},
+        session_id="test",
+        key="slow",
+    )
+
+    # Wait until task is running
+    deadline = time.time() + 5.0
+    while result.status == TaskStatus.PENDING:
+        if time.time() > deadline:
+            raise TimeoutError("Task never started")
+        time.sleep(0.05)
+
+    assert result.status == TaskStatus.RUNNING
+
+    # Trigger cleanup after TTL would have expired (1s)
+    time.sleep(1.1)
+    backend._cleanup_expired()
+
+    # Task should still exist (not expired while running)
+    assert backend.get("test", "slow") is not None
+    assert result.status == TaskStatus.RUNNING
+
+    # Wait for completion
+    deadline = time.time() + 5.0
+    while not result.is_finished:
+        if time.time() > deadline:
+            raise TimeoutError("Task did not complete")
+        time.sleep(0.1)
+
+    # Result should be available
+    assert result.status == TaskStatus.COMPLETED
+    assert result.value == "done"
+
+    backend.shutdown()
+
+
 def test_task_result_status_transitions():
     """Test TaskResult status transitions."""
     result = TaskResult(
