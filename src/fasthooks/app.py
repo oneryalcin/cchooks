@@ -39,6 +39,8 @@ from fasthooks.events.tools import (
 from fasthooks.logging import EventLogger
 from fasthooks.registry import HandlerEntry, HandlerRegistry
 from fasthooks.responses import BaseHookResponse
+from fasthooks.tasks.backend import BaseBackend, InMemoryBackend
+from fasthooks.tasks.depends import BackgroundTasks, PendingResults
 
 # Map tool names to typed event classes
 TOOL_EVENT_MAP: dict[str, type[ToolEvent]] = {
@@ -62,6 +64,7 @@ class HookApp(HandlerRegistry):
         state_dir: str | None = None,
         log_dir: str | None = None,
         log_level: str = "INFO",
+        task_backend: BaseBackend | None = None,
     ):
         """Initialize HookApp.
 
@@ -69,6 +72,7 @@ class HookApp(HandlerRegistry):
             state_dir: Directory for persistent state files
             log_dir: Directory for JSONL event logs (enables built-in logging)
             log_level: Logging verbosity
+            task_backend: Backend for background tasks (default: InMemoryBackend)
         """
         super().__init__()
         self.state_dir = state_dir
@@ -76,6 +80,14 @@ class HookApp(HandlerRegistry):
         self.log_level = log_level
         self._logger = EventLogger(log_dir) if log_dir else None
         self._middleware: list[Callable[..., Any]] = []
+        self._task_backend: BaseBackend | None = task_backend  # Lazy init
+
+    @property
+    def task_backend(self) -> BaseBackend:
+        """Get the task backend, creating default InMemoryBackend if needed."""
+        if self._task_backend is None:
+            self._task_backend = InMemoryBackend()
+        return self._task_backend
 
     # ═══════════════════════════════════════════════════════════════
     # Middleware
@@ -388,5 +400,15 @@ class HookApp(HandlerRegistry):
                 else:
                     # No state_dir configured, provide no-op state
                     deps[param_name] = NullState()
+            elif hint is BackgroundTasks:
+                deps[param_name] = BackgroundTasks(
+                    self.task_backend,
+                    event.session_id,
+                )
+            elif hint is PendingResults:
+                deps[param_name] = PendingResults(
+                    self.task_backend,
+                    event.session_id,
+                )
 
         return deps
