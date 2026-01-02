@@ -102,6 +102,33 @@ class UserMessage(Entry):
             return self._content
         return ""
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dict, reconstructing message structure from parsed content."""
+        data = super().to_dict()
+
+        # Reconstruct message.content from _content
+        if isinstance(self._content, str):
+            message_content: str | list[dict[str, Any]] = self._content
+        else:
+            # Serialize tool result blocks
+            message_content = []
+            for block in self._content:
+                block_data = block.model_dump(by_alias=True, exclude_none=True)
+                # Remove private fields
+                block_data.pop("_transcript", None)
+                block_data.pop("_tool_use_result", None)
+                message_content.append(block_data)
+
+        # Get existing message dict or create new one
+        message = data.get("message", {})
+        if not isinstance(message, dict):
+            message = {}
+        message["role"] = "user"
+        message["content"] = message_content
+        data["message"] = message
+
+        return data
+
     @classmethod
     def from_raw(
         cls, data: dict[str, Any], transcript: Transcript | None = None
@@ -193,6 +220,36 @@ class AssistantMessage(Entry):
     def has_tool_use(self) -> bool:
         """Whether this message contains tool use."""
         return any(isinstance(b, ToolUseBlock) for b in self._content)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dict, reconstructing message structure from parsed content."""
+        data = super().to_dict()
+
+        # Serialize content blocks
+        content_list = []
+        for block in self._content:
+            block_data = block.model_dump(by_alias=True, exclude_none=True)
+            # Remove private fields
+            block_data.pop("_transcript", None)
+            block_data.pop("_tool_use_result", None)
+            content_list.append(block_data)
+
+        # Reconstruct message object
+        message: dict[str, Any] = {
+            "role": "assistant",
+            "content": content_list,
+        }
+        if self._message_id:
+            message["id"] = self._message_id
+        if self._model:
+            message["model"] = self._model
+        if self._stop_reason is not None:
+            message["stop_reason"] = self._stop_reason
+        if self._usage:
+            message["usage"] = self._usage
+
+        data["message"] = message
+        return data
 
     @classmethod
     def from_raw(

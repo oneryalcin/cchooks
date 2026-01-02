@@ -816,3 +816,142 @@ class TestCRUDOperations:
         assert t.find_by_uuid("a1") is None
         # Index should be updated
         assert a1 not in t.assistant_messages
+
+    def test_insert_at_zero_clears_parent(self, transcript_with_chain):
+        """Insert at index 0 should set parent_uuid to None."""
+        t = transcript_with_chain
+        # Create entry with existing parent_uuid
+        new_entry = Entry(type="system", uuid="s0", parent_uuid="stale_parent")
+        t.insert(0, new_entry)
+
+        assert new_entry.parent_uuid is None  # Should be cleared
+        u1 = t.find_by_uuid("u1")
+        assert u1.parent_uuid == "s0"  # First entry relinked
+
+    def test_remove_first_entry(self, transcript_with_chain):
+        """Remove first entry should not break chain."""
+        t = transcript_with_chain
+        u1 = t.find_by_uuid("u1")
+        t.remove(u1, relink=True)
+
+        # a1 should now have no parent
+        a1 = t.find_by_uuid("a1")
+        assert a1.parent_uuid is None
+
+    def test_remove_last_entry(self, transcript_with_chain):
+        """Remove last entry should work correctly."""
+        t = transcript_with_chain
+        a2 = t.find_by_uuid("a2")
+        t.remove(a2)
+
+        assert len(t.entries) == 3
+        assert t.find_by_uuid("a2") is None
+
+
+class TestSerializationRoundTrip:
+    """Test that modifications are preserved through save/load cycle."""
+
+    def test_assistant_message_content_modification(self, tmp_path):
+        """Modified content blocks should be saved correctly."""
+        import json
+
+        path = tmp_path / "test.jsonl"
+        entry = {
+            "type": "assistant",
+            "uuid": "a1",
+            "parentUuid": None,
+            "message": {
+                "content": [{"type": "text", "text": "Original"}],
+                "model": "claude-3",
+            },
+        }
+        with open(path, "w") as f:
+            f.write(json.dumps(entry) + "\n")
+
+        t = Transcript(path)
+        t.load()
+        e = t.entries[0]
+
+        # Modify content
+        e.content[0].text = "MODIFIED"
+        t.save()
+
+        # Reload and verify
+        t2 = Transcript(path)
+        t2.load()
+        assert t2.entries[0].text == "MODIFIED"
+
+    def test_user_message_tool_result_modification(self, tmp_path):
+        """Modified tool results should be saved correctly."""
+        import json
+
+        path = tmp_path / "test.jsonl"
+        entry = {
+            "type": "user",
+            "uuid": "u1",
+            "parentUuid": None,
+            "message": {
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "Original", "is_error": False}
+                ]
+            },
+        }
+        with open(path, "w") as f:
+            f.write(json.dumps(entry) + "\n")
+
+        t = Transcript(path)
+        t.load()
+        e = t.entries[0]
+
+        # Modify tool result
+        e.tool_results[0].content = "MODIFIED"
+        t.save()
+
+        # Reload and verify
+        t2 = Transcript(path)
+        t2.load()
+        assert t2.entries[0].tool_results[0].content == "MODIFIED"
+
+    def test_assistant_message_preserves_all_fields(self, tmp_path):
+        """All AssistantMessage fields should survive round-trip."""
+        import json
+
+        path = tmp_path / "test.jsonl"
+        entry = {
+            "type": "assistant",
+            "uuid": "a1",
+            "parentUuid": None,
+            "requestId": "req_123",
+            "message": {
+                "id": "msg_456",
+                "model": "claude-opus-4",
+                "content": [
+                    {"type": "thinking", "thinking": "Let me think...", "signature": "abc"},
+                    {"type": "text", "text": "Response"},
+                    {"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "ls"}},
+                ],
+                "stop_reason": "tool_use",
+                "usage": {"input_tokens": 100, "output_tokens": 50},
+            },
+        }
+        with open(path, "w") as f:
+            f.write(json.dumps(entry) + "\n")
+
+        t = Transcript(path)
+        t.load()
+        t.save()
+
+        # Reload and verify all fields
+        t2 = Transcript(path)
+        t2.load()
+        e = t2.entries[0]
+
+        assert e.request_id == "req_123"
+        assert e.message_id == "msg_456"
+        assert e.model == "claude-opus-4"
+        assert e.stop_reason == "tool_use"
+        assert e.usage["input_tokens"] == 100
+        assert "Let me think" in e.thinking
+        assert e.text == "Response"
+        assert len(e.tool_uses) == 1
+        assert e.tool_uses[0].name == "Bash"

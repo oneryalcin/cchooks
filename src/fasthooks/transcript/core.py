@@ -417,6 +417,9 @@ class Transcript:
             prev_entry = self.entries[index - 1]
             if isinstance(prev_entry, Entry):
                 entry.parent_uuid = prev_entry.uuid
+        else:
+            # Inserting at start - explicitly set no parent
+            entry.parent_uuid = None
 
         # Relink the entry that will follow
         if index < len(self.entries):
