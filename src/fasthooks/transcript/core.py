@@ -38,11 +38,12 @@ class Transcript:
 
     def __init__(
         self,
-        path: str | Path,
+        path: str | Path | None = None,
         validate: Literal["strict", "warn", "none"] = "warn",
         safety: Literal["strict", "warn", "none"] = "warn",
+        auto_load: bool = True,
     ):
-        self.path = Path(path)
+        self.path = Path(path) if path else None
         self.validate = validate
         self.safety = safety
 
@@ -66,9 +67,13 @@ class Transcript:
         self.include_archived: bool = False
         self.include_meta: bool = False
 
+        # Auto-load if path provided
+        if auto_load and self.path:
+            self.load()
+
     def load(self) -> None:
         """Load entries from JSONL file."""
-        if not self.path.exists():
+        if not self.path or not self.path.exists():
             self._loaded = True
             return
 
@@ -319,21 +324,35 @@ class Transcript:
         """All file history snapshots (uses default include_archived setting)."""
         return self.get_file_snapshots()
 
-    @property
-    def turns(self) -> list[Turn]:
-        """Group assistant messages by requestId into Turns."""
+    def get_turns(self, include_archived: bool | None = None) -> list[Turn]:
+        """Group assistant messages by requestId into Turns.
+
+        Args:
+            include_archived: Include archived entries. Defaults to self.include_archived.
+        """
         from fasthooks.transcript.turn import Turn
+
+        source = self._get_source(include_archived)
+        # Use UUIDs for membership check (entries aren't hashable)
+        source_uuids = {e.uuid for e in source if isinstance(e, Entry) and e.uuid}
 
         result = []
         seen: set[str] = set()
-        for entry in self._get_source():
+        for entry in source:
             if isinstance(entry, AssistantMessage) and entry.request_id:
                 if entry.request_id not in seen:
                     seen.add(entry.request_id)
-                    entries = self._request_id_index.get(entry.request_id, [])
-                    if entries:
-                        result.append(Turn(request_id=entry.request_id, entries=entries))
+                    # Filter entries to only those in current source
+                    all_entries = self._request_id_index.get(entry.request_id, [])
+                    filtered = [e for e in all_entries if e.uuid in source_uuids]
+                    if filtered:
+                        result.append(Turn(request_id=entry.request_id, entries=filtered))
         return result
+
+    @property
+    def turns(self) -> list[Turn]:
+        """Group assistant messages by requestId into Turns (uses default include_archived)."""
+        return self.get_turns()
 
     # === CRUD Operations ===
 
@@ -342,7 +361,13 @@ class Transcript:
 
         Writes archived entries first, then current entries.
         Uses temp file + rename for atomicity.
+
+        Raises:
+            ValueError: If no path is set.
         """
+        if not self.path:
+            raise ValueError("Cannot save: no path set")
+
         lines = []
         for entry in self._archived:
             lines.append(json.dumps(entry.to_dict()))
@@ -486,6 +511,13 @@ class Transcript:
             if entry.message_id:
                 self._snapshot_index.pop(entry.message_id, None)
 
+    # === Statistics ===
+
+    @property
+    def stats(self) -> "TranscriptStats":
+        """Calculate transcript statistics."""
+        return TranscriptStats.from_transcript(self)
+
     # === Iteration ===
 
     def __iter__(self) -> Iterator[TranscriptEntry]:
@@ -496,3 +528,125 @@ class Transcript:
 
     def __repr__(self) -> str:
         return f"Transcript({self.path}, entries={len(self.entries)}, archived={len(self._archived)})"  # noqa: E501
+
+
+class TranscriptStats:
+    """Statistics extracted from a transcript."""
+
+    def __init__(
+        self,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cache_read_tokens: int = 0,
+        cache_creation_tokens: int = 0,
+        tool_calls: dict[str, int] | None = None,
+        error_count: int = 0,
+        message_count: int = 0,
+        turn_count: int = 0,
+        compact_count: int = 0,
+        duration_seconds: float = 0.0,
+        slug: str | None = None,
+    ):
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.cache_read_tokens = cache_read_tokens
+        self.cache_creation_tokens = cache_creation_tokens
+        self.tool_calls = tool_calls or {}
+        self.error_count = error_count
+        self.message_count = message_count
+        self.turn_count = turn_count
+        self.compact_count = compact_count
+        self.duration_seconds = duration_seconds
+        self.slug = slug
+
+    @classmethod
+    def from_transcript(cls, transcript: Transcript) -> "TranscriptStats":
+        """Calculate statistics from a transcript."""
+        from datetime import datetime
+
+        input_tokens = 0
+        output_tokens = 0
+        cache_read_tokens = 0
+        cache_creation_tokens = 0
+        tool_calls: dict[str, int] = {}
+        error_count = 0
+        message_count = 0
+        compact_count = 0
+        first_ts: datetime | None = None
+        last_ts: datetime | None = None
+        slug: str | None = None
+        request_ids: set[str] = set()
+
+        # Include both current and archived for full stats
+        all_entries = transcript._archived + transcript.entries
+
+        for entry in all_entries:
+            # Track timestamps
+            if hasattr(entry, "timestamp") and entry.timestamp:
+                if not first_ts:
+                    first_ts = entry.timestamp
+                last_ts = entry.timestamp
+
+            # Capture slug
+            if hasattr(entry, "slug") and entry.slug and not slug:
+                slug = entry.slug
+
+            # Count messages
+            if isinstance(entry, (UserMessage, AssistantMessage)):
+                message_count += 1
+
+            # Count compactions
+            if isinstance(entry, CompactBoundary):
+                compact_count += 1
+
+            # Extract from assistant messages
+            if isinstance(entry, AssistantMessage):
+                usage = entry.usage
+                input_tokens += usage.get("input_tokens", 0)
+                output_tokens += usage.get("output_tokens", 0)
+                cache_read_tokens += usage.get("cache_read_input_tokens", 0)
+                cache_creation_tokens += usage.get("cache_creation_input_tokens", 0)
+
+                # Count tool calls
+                for tool_use in entry.tool_uses:
+                    name = tool_use.name
+                    tool_calls[name] = tool_calls.get(name, 0) + 1
+
+                # Track unique request IDs for turn count
+                if entry.request_id:
+                    request_ids.add(entry.request_id)
+
+            # Count errors from tool results (in UserMessage entries)
+            if isinstance(entry, UserMessage) and entry.is_tool_result:
+                for result in entry.tool_results:
+                    if result.is_error:
+                        error_count += 1
+
+        # Calculate duration
+        duration_seconds = 0.0
+        if first_ts and last_ts:
+            duration_seconds = (last_ts - first_ts).total_seconds()
+
+        # Turn count from unique request IDs
+        turn_count = len(request_ids)
+
+        return cls(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+            tool_calls=tool_calls,
+            error_count=error_count,
+            message_count=message_count,
+            turn_count=turn_count,
+            compact_count=compact_count,
+            duration_seconds=duration_seconds,
+            slug=slug,
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"TranscriptStats(tokens={self.input_tokens}in/{self.output_tokens}out, "
+            f"messages={self.message_count}, turns={self.turn_count}, "
+            f"errors={self.error_count})"
+        )

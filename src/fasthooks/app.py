@@ -327,6 +327,9 @@ class HookApp(HandlerRegistry):
         Returns:
             First actionable response, or None
         """
+        # Cache for dependencies that should be shared across handlers
+        dep_cache: dict[str, Any] = {}
+
         for handler, guard in handlers:
             try:
                 # Check guard condition (supports async guards)
@@ -341,7 +344,7 @@ class HookApp(HandlerRegistry):
                         continue  # Guard failed, skip handler
 
                 # Build dependencies based on type hints
-                deps = self._resolve_dependencies(handler, event)
+                deps = self._resolve_dependencies(handler, event, dep_cache)
 
                 # Run handler (supports async handlers)
                 if inspect.iscoroutinefunction(handler):
@@ -365,17 +368,21 @@ class HookApp(HandlerRegistry):
         self,
         handler: Callable[..., Any],
         event: BaseEvent,
+        cache: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Resolve dependencies for a handler based on type hints.
 
         Args:
             handler: Handler function to inspect
             event: Event object (for transcript_path, session_id)
+            cache: Optional cache dict for sharing deps across handlers
 
         Returns:
             Dict of parameter name -> dependency instance
         """
         deps: dict[str, Any] = {}
+        if cache is None:
+            cache = {}
 
         try:
             hints = get_type_hints(handler)
@@ -389,8 +396,11 @@ class HookApp(HandlerRegistry):
 
             hint = hints.get(param_name)
             if hint is Transcript:
-                transcript_path = getattr(event, "transcript_path", None)
-                deps[param_name] = Transcript(transcript_path)
+                # Cache Transcript per event to avoid redundant loads
+                if "transcript" not in cache:
+                    transcript_path = getattr(event, "transcript_path", None)
+                    cache["transcript"] = Transcript(transcript_path)
+                deps[param_name] = cache["transcript"]
             elif hint is State:
                 if self.state_dir:
                     deps[param_name] = State.for_session(

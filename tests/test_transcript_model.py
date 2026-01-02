@@ -86,10 +86,52 @@ class TestContentBlocks:
         assert block.signature == "abc123xyz"
 
     def test_unknown_block_type(self):
-        """Unknown types should fallback to TextBlock."""
-        data = {"type": "unknown", "text": "fallback"}
-        block = parse_content_block(data)
-        assert isinstance(block, TextBlock)
+        """Unknown types should fallback to UnknownBlock and warn."""
+        import warnings
+
+        from fasthooks.transcript import UnknownBlock
+
+        data = {"type": "future_block", "text": "some content", "custom": "data"}
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            block = parse_content_block(data, validate="warn")
+
+            # Should warn about unknown type
+            assert len(w) == 1
+            assert "Unknown content block type" in str(w[0].message)
+            assert "future_block" in str(w[0].message)
+
+        # Should be UnknownBlock preserving original type
+        assert isinstance(block, UnknownBlock)
+        assert block.type == "future_block"
+        assert block.text == "some content"
+        assert block.model_extra.get("custom") == "data"
+
+    def test_unknown_block_type_strict(self):
+        """Unknown types should raise in strict mode."""
+        import pytest
+
+        data = {"type": "future_block"}
+        with pytest.raises(ValueError, match="Unknown content block type"):
+            parse_content_block(data, validate="strict")
+
+    def test_unknown_block_type_none(self):
+        """Unknown types should be silent in none mode."""
+        import warnings
+
+        from fasthooks.transcript import UnknownBlock
+
+        data = {"type": "future_block"}
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            block = parse_content_block(data, validate="none")
+
+            # Should NOT warn
+            assert len(w) == 0
+
+        assert isinstance(block, UnknownBlock)
 
     def test_extra_fields_preserved(self):
         """Extra fields should be preserved via model_extra."""
@@ -955,3 +997,143 @@ class TestSerializationRoundTrip:
         assert e.text == "Response"
         assert len(e.tool_uses) == 1
         assert e.tool_uses[0].name == "Bash"
+
+
+class TestStatsWithArchived:
+    """Test that stats include all entries (archived + current)."""
+
+    @pytest.fixture
+    def transcript_with_archived_turns(self, tmp_path):
+        """Create transcript with turns in both archived and current."""
+        import json
+
+        path = tmp_path / "archived_turns.jsonl"
+        entries = [
+            # Archived entries with a turn
+            {
+                "type": "assistant",
+                "uuid": "old_a1",
+                "parentUuid": None,
+                "requestId": "old_req_1",
+                "timestamp": "2024-01-01T10:00:00Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}],
+                    "usage": {"input_tokens": 100, "output_tokens": 50},
+                },
+            },
+            # Compact boundary
+            {
+                "type": "system",
+                "subtype": "compact_boundary",
+                "uuid": "compact1",
+                "parentUuid": None,
+                "logicalParentUuid": "old_a1",
+            },
+            # Current entries with a turn
+            {
+                "type": "assistant",
+                "uuid": "new_a1",
+                "parentUuid": "compact1",
+                "requestId": "new_req_1",
+                "timestamp": "2024-01-01T10:05:00Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "t2", "name": "Read", "input": {}}],
+                    "usage": {"input_tokens": 200, "output_tokens": 100},
+                },
+            },
+        ]
+        with open(path, "w") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+
+        return Transcript(path)
+
+    def test_stats_turn_count_includes_archived(self, transcript_with_archived_turns):
+        """Stats should count turns from both archived and current."""
+        t = transcript_with_archived_turns
+        stats = t.stats
+
+        # Should count both old_req_1 and new_req_1
+        assert stats.turn_count == 2
+
+    def test_stats_tokens_include_archived(self, transcript_with_archived_turns):
+        """Stats should sum tokens from both archived and current."""
+        t = transcript_with_archived_turns
+        stats = t.stats
+
+        assert stats.input_tokens == 300  # 100 + 200
+        assert stats.output_tokens == 150  # 50 + 100
+
+    def test_stats_tool_calls_include_archived(self, transcript_with_archived_turns):
+        """Stats should count tool calls from both archived and current."""
+        t = transcript_with_archived_turns
+        stats = t.stats
+
+        assert stats.tool_calls == {"Bash": 1, "Read": 1}
+
+
+class TestTurnsFiltering:
+    """Test that turns property correctly filters by include_archived."""
+
+    @pytest.fixture
+    def transcript_with_archived_turns(self, tmp_path):
+        """Create transcript with turns in both archived and current."""
+        import json
+
+        path = tmp_path / "turns.jsonl"
+        entries = [
+            # Archived turn
+            {
+                "type": "assistant",
+                "uuid": "old_a1",
+                "requestId": "old_req",
+                "message": {"role": "assistant", "content": []},
+            },
+            # Compact boundary
+            {
+                "type": "system",
+                "subtype": "compact_boundary",
+                "uuid": "compact1",
+                "parentUuid": None,
+            },
+            # Current turn
+            {
+                "type": "assistant",
+                "uuid": "new_a1",
+                "parentUuid": "compact1",
+                "requestId": "new_req",
+                "message": {"role": "assistant", "content": []},
+            },
+        ]
+        with open(path, "w") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+
+        return Transcript(path)
+
+    def test_turns_excludes_archived_by_default(self, transcript_with_archived_turns):
+        """turns property should only show current turns by default."""
+        t = transcript_with_archived_turns
+        turns = t.turns
+
+        assert len(turns) == 1
+        assert turns[0].request_id == "new_req"
+
+    def test_turns_includes_archived_when_set(self, transcript_with_archived_turns):
+        """turns property should include archived when include_archived=True."""
+        t = transcript_with_archived_turns
+        t.include_archived = True
+        turns = t.turns
+
+        assert len(turns) == 2
+        request_ids = {turn.request_id for turn in turns}
+        assert request_ids == {"old_req", "new_req"}
+
+    def test_get_turns_with_param(self, transcript_with_archived_turns):
+        """get_turns should accept include_archived param."""
+        t = transcript_with_archived_turns
+
+        assert len(t.get_turns(include_archived=False)) == 1
+        assert len(t.get_turns(include_archived=True)) == 2

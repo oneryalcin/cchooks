@@ -259,12 +259,15 @@ class AssistantMessage(Entry):
         message = data.get("message", {})
         raw_content = message.get("content", [])
 
+        # Get validate setting from transcript (default to "warn")
+        validate = transcript.validate if transcript else "warn"
+
         # Parse content blocks
         content = []
         if isinstance(raw_content, list):
             for item in raw_content:
                 if isinstance(item, dict):
-                    content.append(parse_content_block(item, transcript))
+                    content.append(parse_content_block(item, transcript, validate=validate))
 
         # Create instance with pydantic validation
         instance = cls.model_validate(data)

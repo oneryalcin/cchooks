@@ -5,9 +5,10 @@ from fasthooks.transcript.blocks import (
     ThinkingBlock,
     ToolResultBlock,
     ToolUseBlock,
+    UnknownBlock,
     parse_content_block,
 )
-from fasthooks.transcript.core import Transcript
+from fasthooks.transcript.core import Transcript, TranscriptStats
 from fasthooks.transcript.entries import (
     AssistantMessage,
     CompactBoundary,
@@ -24,6 +25,7 @@ from fasthooks.transcript.turn import Turn
 __all__ = [
     # Core
     "Transcript",
+    "TranscriptStats",
     "Turn",
     # Blocks
     "ContentBlock",
@@ -31,6 +33,7 @@ __all__ = [
     "ThinkingBlock",
     "ToolResultBlock",
     "ToolUseBlock",
+    "UnknownBlock",
     "parse_content_block",
     # Entries
     "Entry",

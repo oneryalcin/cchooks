@@ -1422,13 +1422,14 @@ The `message.usage` field in AssistantMessage contains detailed token metrics:
 8. [ ] Implement TranscriptView query interface
 9. [ ] Implement factories and presets
 10. [ ] Implement export formats
-11. [ ] Add to fasthooks DI system (replace depends.Transcript)
-12. [x] Write tests (51 tests)
+11. [x] Add to fasthooks DI system (replace depends.Transcript)
+12. [x] Write tests (90+ tests)
 13. [ ] Write documentation/cookbook
 
 ### Implementation Notes (v1)
 
 - **Pydantic over dataclasses**: All models use Pydantic BaseModel for validation, field aliases (camelCase→snake_case), and `extra="allow"` to preserve unknown fields
+- **DI integration**: `depends/transcript.py` re-exports from `fasthooks.transcript`, making rich Transcript available via `from fasthooks.depends import Transcript`. Constructor accepts `path: str | Path | None` with `auto_load=True` by default.
 - **`include_archived` setting**: Transcript has instance-level `include_archived=False` default; views respect this, methods accept override param
 - **`include_meta` setting**: Filters out `isMeta=True` and `isVisibleInTranscriptOnly=True` entries by default
 - **`tool_results` property**: Added to UserMessage for type-safe access (returns `list[ToolResultBlock]`)
@@ -1438,3 +1439,8 @@ The `message.usage` field in AssistantMessage contains detailed token metrics:
 - **CRUD operations**: `remove(relink=True)`, `remove_tree()`, `insert()`, `append()`, `replace()` all manage parentUuid chain
 - **`save()`**: Atomic write via temp file + rename; uses `to_dict()` which serializes with camelCase aliases
 - **No proxy pattern needed**: `model_dump(by_alias=True)` includes `model_extra`, preserving original nested structure
+- **TranscriptStats consistency**: Calculates all metrics (turn_count, error_count, tokens) from archived+current entries for full session stats
+- **DI caching**: Transcript is cached per-event in `_run_handlers`, so multiple handlers share same instance
+- **turns filtering**: `get_turns(include_archived=...)` filters entries by UUID membership to respect include_archived setting
+- **UnknownBlock**: Forward-compatible fallback for unrecognized content block types; preserves original type string and all data
+- **validate setting**: Flows from Transcript to `parse_content_block()` - "strict" raises, "warn" logs warning (default), "none" silent

@@ -1,6 +1,7 @@
 """Content block types embedded in transcript messages."""
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -83,16 +84,36 @@ class ThinkingBlock(BaseModel):
     signature: str = ""
 
 
+class UnknownBlock(BaseModel):
+    """Fallback for unrecognized block types.
+
+    Preserves the original type and all data for forward compatibility.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    type: str = ""  # Preserves original type string
+    text: str = ""  # For convenience, try to extract text if present
+
+
 # Union type for all content blocks
-ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | ThinkingBlock
+ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | ThinkingBlock | UnknownBlock
 
 
 def parse_content_block(
     data: dict[str, Any],
     transcript: Transcript | None = None,
     tool_use_result: dict[str, Any] | str | None = None,
+    validate: Literal["strict", "warn", "none"] = "warn",
 ) -> ContentBlock:
-    """Parse a content block from raw dict based on type."""
+    """Parse a content block from raw dict based on type.
+
+    Args:
+        data: Raw block dict from transcript
+        transcript: Transcript for relationship lookups
+        tool_use_result: Structured tool result from entry
+        validate: Validation mode - "strict" raises, "warn" logs warning, "none" silent
+    """
     block_type = data.get("type", "")
 
     if block_type == "text":
@@ -112,8 +133,15 @@ def parse_content_block(
     elif block_type == "thinking":
         return ThinkingBlock.model_validate(data)
     else:
-        # Unknown block type - return as TextBlock with type overridden
-        # We need to override type since TextBlock expects Literal["text"]
-        data_copy = dict(data)
-        data_copy["type"] = "text"  # Override to satisfy Literal
-        return TextBlock.model_validate(data_copy)
+        # Unknown block type - preserve original type for forward compatibility
+        if validate == "strict":
+            raise ValueError(f"Unknown content block type: {block_type!r}")
+        elif validate == "warn":
+            warnings.warn(
+                f"Unknown content block type: {block_type!r}. "
+                "Consider updating fasthooks to support this type.",
+                UserWarning,
+                stacklevel=2,
+            )
+        # Return UnknownBlock that preserves original type
+        return UnknownBlock.model_validate(data)

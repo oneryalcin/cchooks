@@ -9,15 +9,31 @@ from fasthooks.depends import State, Transcript
 class TestDITranscript:
     def test_transcript_injected(self, tmp_path):
         """Transcript is auto-injected when type-hinted."""
-        # Create sample transcript
+        # Create sample transcript with proper structure
         transcript_file = tmp_path / "transcript.jsonl"
-        transcript_file.write_text(
-            '{"type": "user", "timestamp": "2024-01-01T10:00:00Z"}\n'
-            '{"type": "assistant", "timestamp": "2024-01-01T10:00:05Z", '
-            '"message": {"content": [{"type": "tool_use", "name": "Bash", '
-            '"input": {"command": "ls"}}], '
-            '"usage": {"input_tokens": 100, "output_tokens": 50}}}\n'
-        )
+        entries = [
+            {
+                "type": "user",
+                "uuid": "u1",
+                "timestamp": "2024-01-01T10:00:00Z",
+                "message": {"role": "user", "content": "test"},
+            },
+            {
+                "type": "assistant",
+                "uuid": "a1",
+                "parentUuid": "u1",
+                "requestId": "r1",
+                "timestamp": "2024-01-01T10:00:05Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}},
+                    ],
+                    "usage": {"input_tokens": 100, "output_tokens": 50},
+                },
+            },
+        ]
+        transcript_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
         app = HookApp()
         captured_stats = []
@@ -46,7 +62,8 @@ class TestDITranscript:
 
         @app.on_stop()
         def handler(event, transcript: Transcript):
-            captured.append(transcript.stats.message_counts)
+            # New API uses message_count (int) not message_counts (dict)
+            captured.append(transcript.stats.message_count)
             return allow()
 
         stdin = StringIO(json.dumps({
@@ -58,7 +75,7 @@ class TestDITranscript:
         stdout = StringIO()
         app.run(stdin=stdin, stdout=stdout)
 
-        assert captured == [{}]  # Empty stats, no crash
+        assert captured == [0]  # Empty stats, no crash
 
 
 class TestDIState:
@@ -140,7 +157,7 @@ class TestDICombined:
     def test_multiple_deps_injected(self, tmp_path):
         """Multiple dependencies can be injected."""
         transcript_file = tmp_path / "transcript.jsonl"
-        transcript_file.write_text('{"type": "user"}\n')
+        transcript_file.write_text('{"type": "user", "uuid": "u1", "message": {"role": "user", "content": "hi"}}\n')
 
         app = HookApp(state_dir=str(tmp_path))
         captured = []
@@ -212,3 +229,36 @@ class TestDIPreTool:
         app.run(stdin=stdin, stdout=StringIO())
 
         assert captured == [1]
+
+
+class TestDITranscriptCaching:
+    def test_transcript_cached_across_handlers(self, tmp_path):
+        """Same Transcript instance should be shared across handlers."""
+        transcript_file = tmp_path / "transcript.jsonl"
+        transcript_file.write_text(
+            '{"type": "user", "uuid": "u1", "message": {"role": "user", "content": "hi"}}\n'
+        )
+
+        app = HookApp()
+        transcript_ids = []
+
+        @app.on_stop()
+        def handler1(event, transcript: Transcript):
+            transcript_ids.append(id(transcript))
+
+        @app.on_stop()
+        def handler2(event, transcript: Transcript):
+            transcript_ids.append(id(transcript))
+
+        stdin = StringIO(json.dumps({
+            "session_id": "test",
+            "cwd": "/workspace",
+            "permission_mode": "default",
+            "hook_event_name": "Stop",
+            "transcript_path": str(transcript_file),
+        }))
+        app.run(stdin=stdin, stdout=StringIO())
+
+        # Both handlers should get the same Transcript instance
+        assert len(transcript_ids) == 2
+        assert transcript_ids[0] == transcript_ids[1]
