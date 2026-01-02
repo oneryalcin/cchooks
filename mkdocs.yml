@@ -57,6 +57,7 @@ nav:
       - api/testing.md
   - Comparisons:
       - comparison/index.md
+      - cchooks: comparison/cchooks.md
       - Claude Agent SDK: comparison/claude-agent-sdk.md
       - claude-mem: comparison/claude-mem.md
       - Continuous-Claude-v2: comparison/continuous-claude.md
