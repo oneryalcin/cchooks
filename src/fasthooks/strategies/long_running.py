@@ -268,6 +268,9 @@ class LongRunningStrategy(Strategy):
     DEFAULT_INIT_SCRIPT = "init.sh"
     DEFAULT_MIN_FEATURES = 30
 
+    # Default paths to exclude from uncommitted changes check
+    DEFAULT_EXCLUDE_PATHS = ["hooks/", ".claude/"]
+
     def __init__(
         self,
         *,
@@ -278,6 +281,7 @@ class LongRunningStrategy(Strategy):
         enforce_commits: bool = True,
         warn_uncommitted: bool = True,
         require_progress_update: bool = True,
+        exclude_paths: list[str] | None = None,
         **config: Any,
     ):
         super().__init__(**config)
@@ -288,6 +292,7 @@ class LongRunningStrategy(Strategy):
         self.enforce_commits = enforce_commits
         self.warn_uncommitted = warn_uncommitted
         self.require_progress_update = require_progress_update
+        self.exclude_paths = exclude_paths or self.DEFAULT_EXCLUDE_PATHS
 
     def _build_blueprint(self) -> Blueprint:
         bp = Blueprint("long-running")
@@ -599,7 +604,10 @@ Update {self.progress_file} with current status.
             return False
 
     def _check_uncommitted(self, project_dir: Path) -> list[str]:
-        """Return list of uncommitted files, empty if clean or not a git repo."""
+        """Return list of uncommitted files, empty if clean or not a git repo.
+
+        Excludes paths matching self.exclude_paths patterns.
+        """
         if not self._is_git_repo(project_dir):
             # Not a git repo - can't check uncommitted
             return []
@@ -612,7 +620,13 @@ Update {self.progress_file} with current status.
             )
             if result.returncode == 0 and result.stdout.strip():
                 lines = result.stdout.strip().split("\n")
-                return [ln[3:].strip() for ln in lines if ln]
+                files = [ln[3:].strip() for ln in lines if ln]
+                # Filter out excluded paths
+                return [
+                    f
+                    for f in files
+                    if not any(f.startswith(excl) for excl in self.exclude_paths)
+                ]
         except Exception:
             pass
         return []
