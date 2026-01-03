@@ -2,6 +2,11 @@
 
 The `LongRunningStrategy` implements Anthropic's two-agent pattern for autonomous agents that work across multiple context windows. It prevents the two common failure modes of long-running agents: **one-shotting** (trying to do everything at once) and **premature victory** (declaring done too early).
 
+> **Live Example**: See a full expense tracker app built autonomously using this strategy:
+> [github.com/oneryalcin/fasthooks_example_longrun](https://github.com/oneryalcin/fasthooks_example_longrun)
+>
+> The repo includes the hooks configuration, Docker setup, and the complete 24-feature app with session history.
+
 ## The Problem
 
 Long-running autonomous agents face a fundamental challenge: they work in discrete sessions, and each new session starts with no memory of what came before. This leads to:
@@ -86,7 +91,7 @@ Add to your Claude Code settings (`~/.claude/settings.json`):
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Bash",
+        "matcher": "Write|Edit|Bash",
         "hooks": [{"type": "command", "command": "python3 /opt/hooks/main.py"}]
       }
     ]
@@ -264,7 +269,7 @@ services:
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Bash",
+        "matcher": "Write|Edit|Bash",
         "hooks": [{"type": "command", "command": "python3 /opt/hooks/main.py"}]
       }
     ]
@@ -367,6 +372,85 @@ make run
 # Watch strategy events in another terminal
 make logs
 ```
+
+---
+
+## Browser Testing with Headless Chrome
+
+For frontend projects, Claude can use the `chrome-devtools-mcp` server to interact with a real browser. Running headless Chrome inside the container ensures all network requests stay local (no CORS issues).
+
+### Updated Dockerfile (with Chromium)
+
+```dockerfile
+FROM debian:bookworm-slim
+
+# Install system dependencies + Chromium
+RUN apt-get update && apt-get install -y \
+    curl git ripgrep jq \
+    python3 python3-pip python3-venv \
+    ca-certificates gnupg \
+    chromium chromium-sandbox \
+    fonts-liberation libnss3 libatk-bridge2.0-0 \
+    libdrm2 libxkbcommon0 libgbm1 libasound2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# ... rest of Dockerfile ...
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/bin/bash"]
+```
+
+### entrypoint.sh
+
+```bash
+#!/bin/bash
+# Start headless Chromium with remote debugging
+chromium \
+  --headless \
+  --disable-gpu \
+  --no-sandbox \
+  --disable-dev-shm-usage \
+  --remote-debugging-port=9222 \
+  --remote-debugging-address=0.0.0.0 \
+  --user-data-dir=/tmp/chrome-profile \
+  &
+
+sleep 2
+exec "$@"
+```
+
+### MCP Configuration (in ~/.claude.json)
+
+```json
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest", "--browser-url=http://localhost:9222"]
+    }
+  }
+}
+```
+
+### Port Forwarding for Manual Testing
+
+Expose frontend/backend ports so you can test in your host browser while Claude works:
+
+```yaml
+# docker-compose.yml
+services:
+  claude:
+    # ...
+    ports:
+      - "3000:3000"   # Frontend (Vite/React)
+      - "8000:8000"   # Backend (FastAPI)
+```
+
+Now you can:
+- Claude uses headless Chrome via MCP for automated testing
+- You access `http://localhost:3000` in your browser for manual testing
 
 ---
 
@@ -747,11 +831,15 @@ class LongRunningStrategy(Strategy):
 | `on_session_start` | `SessionStart` | Inject initializer or coding context |
 | `on_stop` | `Stop` | Enforce clean state before stopping |
 | `on_pre_compact` | `PreCompact` | Inject checkpoint reminder |
-| `post_tool("Write")` | `PostToolUse` | Track file modifications |
+| `post_tool("Write")` | `PostToolUse` | Track file creations |
+| `post_tool("Edit")` | `PostToolUse` | Track file modifications (Claude uses Edit for updates) |
 | `post_tool("Bash")` | `PostToolUse` | Track git commits |
+
+> **Important**: Claude uses the `Edit` tool (shown as "Update" in UI) for file modifications, not `Write`. Make sure your PostToolUse matcher includes `Edit`!
 
 ---
 
 ## Further Reading
 
-- [Anthropic: Effective Harnesses for Long-Running Agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
+- [Live Example: Expense Tracker built with LongRunningStrategy](https://github.com/oneryalcin/fasthooks_example_longrun) - Full app with hooks config and session history
+- [Anthropic: Effective Harnesses for Long-Running Agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) - Original article this strategy implements

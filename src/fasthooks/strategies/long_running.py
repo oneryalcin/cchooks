@@ -257,6 +257,7 @@ class LongRunningStrategy(Strategy):
             "on_stop",
             "on_precompact",
             "post_tool:Write",
+            "post_tool:Edit",
             "post_tool:Bash",
         ]
         fail_mode: Literal["open", "closed"] = "open"
@@ -312,6 +313,10 @@ class LongRunningStrategy(Strategy):
         @bp.post_tool("Write")
         def post_write(event: Any, state: State) -> Any:
             return self._track_write(event, state)
+
+        @bp.post_tool("Edit")
+        def post_edit(event: Any, state: State) -> Any:
+            return self._track_write(event, state)  # Same logic as Write
 
         @bp.post_tool("Bash")
         def post_bash(event: Any, state: State) -> Any:

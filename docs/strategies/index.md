@@ -94,3 +94,4 @@ Events emitted:
 ## Further Reading
 
 - [Long-Running Strategy Guide](long-running.md)
+- [Live Example: Expense Tracker built with LongRunningStrategy](https://github.com/oneryalcin/fasthooks_example_longrun)
