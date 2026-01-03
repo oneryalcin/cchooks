@@ -34,50 +34,60 @@ Session 1 (Initializer)          Sessions 2+ (Coding)
 
 ### 1. Create Your Hooks File
 
-Create `hooks.py` in your project:
+Create `hooks/main.py` (**outside your project workspace**):
 
 ```python
+#!/usr/bin/env python3
 from fasthooks import HookApp
 from fasthooks.strategies import LongRunningStrategy
 
-app = HookApp()
+app = HookApp(
+    log_dir="/opt/hooks/logs",    # Outside workspace
+    state_dir="/opt/hooks/logs",  # Outside workspace
+)
 
-# Create the strategy with default settings
-strategy = LongRunningStrategy()
+strategy = LongRunningStrategy(
+    min_features=5,  # Adjust for your project
+)
 
-# Include the strategy's hooks
+# Optional: Enable observability logging
+@strategy.on_observe
+def log_events(event):
+    with open("/opt/hooks/logs/strategy.log", "a") as f:
+        f.write(f"[{event.timestamp}] {event.event_type}: {event.hook_name}\n")
+
 app.include(strategy.get_blueprint())
 
 if __name__ == "__main__":
     app.run()
 ```
 
-### 2. Configure Claude Code
+### 2. Configure Claude Code Settings
 
-Add to your Claude Code settings (`~/.claude/settings.json` or project `.claude/settings.json`):
+Add to your Claude Code settings (`~/.claude/settings.json`):
 
 ```json
 {
   "hooks": {
     "SessionStart": [
       {
-        "hooks": [{"type": "command", "command": "python /path/to/hooks.py"}]
+        "hooks": [{"type": "command", "command": "python3 /opt/hooks/main.py"}]
       }
     ],
     "Stop": [
       {
-        "hooks": [{"type": "command", "command": "python /path/to/hooks.py"}]
+        "hooks": [{"type": "command", "command": "python3 /opt/hooks/main.py"}]
       }
     ],
     "PreCompact": [
       {
-        "hooks": [{"type": "command", "command": "python /path/to/hooks.py"}]
+        "hooks": [{"type": "command", "command": "python3 /opt/hooks/main.py"}]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "*",
-        "hooks": [{"type": "command", "command": "python /path/to/hooks.py"}]
+        "matcher": "Write|Bash",
+        "hooks": [{"type": "command", "command": "python3 /opt/hooks/main.py"}]
       }
     ]
   }
@@ -95,6 +105,271 @@ claude
 
 **Subsequent sessions**: Claude will read progress, verify existing features, and work on one feature at a time.
 
+---
+
+## Critical: Mounting Hooks Correctly
+
+**Claude can modify files in its workspace.** If your hooks are inside the workspace, Claude may delete or modify them to "fix" uncommitted changes errors.
+
+### The Problem
+
+```
+workspace/
+├── hooks/
+│   └── main.py    # ❌ Claude deleted this to fix "uncommitted changes"!
+└── src/
+```
+
+### The Solution
+
+Mount hooks **outside** the workspace as read-only:
+
+```
+/opt/hooks/          # Read-only, Claude can't modify
+├── main.py
+└── logs/            # Writable for logging
+
+/workspace/          # Claude's workspace
+├── src/
+└── feature_list.json
+```
+
+---
+
+## Docker Deployment (Recommended)
+
+The most reliable way to run LongRunningStrategy is in a Docker container with proper isolation.
+
+### Directory Structure
+
+```
+my-strategy-test/
+├── Dockerfile
+├── docker-compose.yml
+├── settings.json          # Claude Code hook settings
+├── claude.json            # Claude Code config (onboarding bypass)
+├── hooks/
+│   ├── main.py            # Your hook script
+│   └── logs/              # Generated logs
+├── workspace/             # Claude's project directory
+└── claude-sessions/       # Persisted Claude transcripts
+```
+
+### Dockerfile
+
+```dockerfile
+FROM debian:bookworm-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    ripgrep \
+    jq \
+    python3 \
+    python3-pip \
+    python3-venv \
+    ca-certificates \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create python alias
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
+# Install Node.js 20.x (for frontend projects)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Docker CLI (for docker compose)
+RUN install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
+    && chmod a+r /etc/apt/keyrings/docker.asc \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y docker-ce-cli docker-compose-plugin \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv (fast Python package manager)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+
+# Install Claude Code
+RUN curl -fsSL https://claude.ai/install.sh | bash
+
+# Install fasthooks
+RUN uv pip install --system --break-system-packages fasthooks
+
+WORKDIR /workspace
+RUN mkdir -p /root/.claude
+
+CMD ["/bin/bash"]
+```
+
+### docker-compose.yml
+
+```yaml
+services:
+  claude:
+    build: .
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      # Project workspace
+      - ./workspace:/workspace
+
+      # Hooks OUTSIDE workspace (read-only, except logs)
+      - ./hooks:/opt/hooks:ro
+      - ./hooks/logs:/opt/hooks/logs
+
+      # Claude Code configuration
+      - ./claude.json:/root/.claude.json
+      - ./settings.json:/root/.claude/settings.json
+
+      # Persist session transcripts for analysis
+      - ./claude-sessions:/root/.claude/projects
+
+      # Docker socket for docker/docker-compose commands
+      - /var/run/docker.sock:/var/run/docker.sock
+    stdin_open: true
+    tty: true
+```
+
+### settings.json
+
+```json
+{
+  "env": {
+    "DISABLE_AUTOUPDATER": "1"
+  },
+  "permissions": {
+    "allow": ["Bash", "Read", "Write", "Edit"]
+  },
+  "model": "sonnet",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [{"type": "command", "command": "python3 /opt/hooks/main.py"}]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{"type": "command", "command": "python3 /opt/hooks/main.py"}]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [{"type": "command", "command": "python3 /opt/hooks/main.py"}]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Bash",
+        "hooks": [{"type": "command", "command": "python3 /opt/hooks/main.py"}]
+      }
+    ]
+  }
+}
+```
+
+### hooks/main.py
+
+```python
+#!/usr/bin/env python3
+"""Long-running agent hooks."""
+from fasthooks import HookApp
+from fasthooks.strategies import LongRunningStrategy
+
+app = HookApp(
+    log_dir="/opt/hooks/logs",
+    state_dir="/opt/hooks/logs",
+)
+
+strategy = LongRunningStrategy(
+    feature_list="feature_list.json",
+    progress_file="claude-progress.txt",
+    init_script="init.sh",
+    min_features=30,
+    enforce_commits=True,
+    require_progress_update=True,
+    exclude_paths=["hooks/", ".claude/"],  # Ignore these in uncommitted check
+)
+
+# Log strategy events to file
+STRATEGY_LOG = "/opt/hooks/logs/strategy.log"
+
+@strategy.on_observe
+def log_events(event):
+    with open(STRATEGY_LOG, "a") as f:
+        f.write(f"[{event.timestamp}] {event.event_type}: {event.hook_name}\n")
+        if hasattr(event, "decision"):
+            f.write(f"  decision={event.decision}\n")
+
+app.include(strategy.get_blueprint())
+
+if __name__ == "__main__":
+    app.run()
+```
+
+### claude.json (Bypass Onboarding)
+
+```json
+{
+  "numStartups": 5,
+  "hasCompletedOnboarding": true,
+  "hasSeenStashHint": true,
+  "projects": {
+    "/workspace": {
+      "allowedTools": [],
+      "hasTrustDialogAccepted": true,
+      "projectOnboardingSeenCount": 3
+    }
+  }
+}
+```
+
+### Makefile
+
+```makefile
+.PHONY: build run debug shell logs clean
+
+build:
+	docker compose build
+
+run:
+	docker compose run --rm claude claude
+
+debug:
+	docker compose run --rm claude claude --debug
+
+shell:
+	docker compose run --rm claude bash
+
+logs:
+	tail -f hooks/logs/strategy.log
+
+clean:
+	rm -rf workspace/* hooks/logs/*.jsonl hooks/logs/*.log
+```
+
+### Running
+
+```bash
+# Set your API key
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
+
+# Build the image
+make build
+
+# Run Claude Code
+make run
+
+# Watch strategy events in another terminal
+make logs
+```
+
+---
+
 ## Configuration Options
 
 ```python
@@ -110,6 +385,9 @@ strategy = LongRunningStrategy(
     # Enforcement (blocking behavior)
     enforce_commits=True,                # Block stop if uncommitted changes
     require_progress_update=True,        # Block stop if progress not updated
+
+    # Paths to exclude from uncommitted changes check
+    exclude_paths=["hooks/", ".claude/"],
 )
 ```
 
@@ -123,6 +401,9 @@ strategy = LongRunningStrategy(
 | `min_features` | `int` | `30` | Minimum features agent must create |
 | `enforce_commits` | `bool` | `True` | Block stop if uncommitted changes exist |
 | `require_progress_update` | `bool` | `True` | Block stop if progress file not updated |
+| `exclude_paths` | `list[str]` | `["hooks/", ".claude/"]` | Paths to exclude from uncommitted check |
+
+---
 
 ## How It Works
 
@@ -256,6 +537,8 @@ npm run dev &
 echo "Server running at http://localhost:3000"
 ```
 
+---
+
 ## Observability
 
 The strategy emits events for debugging and analysis.
@@ -269,14 +552,14 @@ from fasthooks.strategies import LongRunningStrategy
 app = HookApp()
 strategy = LongRunningStrategy()
 
-# Register observer callback
+# Register observer callback - LOG TO FILE, NOT STDERR
 @strategy.on_observe
 def log_events(event):
-    print(f"[{event.event_type}] {event.hook_name}")
-    if hasattr(event, 'decision'):
-        print(f"  Decision: {event.decision}")
-    if hasattr(event, 'message') and event.message:
-        print(f"  Message: {event.message[:100]}...")
+    # WARNING: Do NOT print to stderr - it causes "hook error" in Claude Code
+    with open("/opt/hooks/logs/strategy.log", "a") as f:
+        f.write(f"[{event.event_type}] {event.hook_name}\n")
+        if hasattr(event, 'decision'):
+            f.write(f"  Decision: {event.decision}\n")
 
 app.include(strategy.get_blueprint())
 ```
@@ -301,37 +584,77 @@ The strategy emits these custom events:
 | `feature_progress` | Session start | `{"passing": 5, "total": 30}` |
 | `checkpoint_needed` | Pre-compact | `{"reason": "compaction"}` |
 
-### Logging to File
+---
 
-Use the built-in file backend:
+## Troubleshooting
 
+### "SessionStart:startup hook error"
+
+**Cause:** Usually stderr output from the hook.
+
+**Fix:** Log to file instead of stderr:
 ```python
-from fasthooks import HookApp
-from fasthooks.strategies import LongRunningStrategy
-from fasthooks.observability import FileObservabilityBackend, Verbosity
+# BAD - causes "hook error"
+print(f"Debug: {event}", file=sys.stderr)
 
-app = HookApp()
-strategy = LongRunningStrategy()
-
-# Create file backend
-backend = FileObservabilityBackend(
-    base_dir="./logs",
-    verbosity=Verbosity.STANDARD,
-)
-
-# Connect strategy to backend
-@strategy.on_observe
-def log_to_file(event):
-    backend.handle_event(event)
-
-# Flush on session end
-import atexit
-atexit.register(backend.flush)
-
-app.include(strategy.get_blueprint())
+# GOOD - log to file
+with open("/opt/hooks/logs/debug.log", "a") as f:
+    f.write(f"Debug: {event}\n")
 ```
 
-Logs are written to `./logs/<session-id>.jsonl` in JSON Lines format.
+### "Cannot stop - uncommitted changes in: hooks/..."
+
+**Cause:** Hook files are in the workspace and detected as uncommitted.
+
+**Fix:**
+1. Mount hooks outside workspace (see Docker Deployment)
+2. Or add to `exclude_paths`:
+```python
+strategy = LongRunningStrategy(
+    exclude_paths=["hooks/", ".claude/"]
+)
+```
+
+### Claude deleted hooks/main.py
+
+**Cause:** Hooks were in the workspace. Claude "fixed" uncommitted changes by deleting them.
+
+**Fix:** Mount hooks as read-only outside workspace:
+```yaml
+volumes:
+  - ./hooks:/opt/hooks:ro          # Read-only!
+  - ./hooks/logs:/opt/hooks/logs   # Logs writable
+```
+
+### "Cannot stop - please update progress file"
+
+**Fix:** Write to `claude-progress.txt` with your session summary.
+
+**Or disable enforcement:**
+```python
+strategy = LongRunningStrategy(require_progress_update=False)
+```
+
+### Initializer runs every session
+
+The strategy checks for `feature_list.json` existence. If it keeps running initializer:
+
+1. Check that `feature_list.json` exists in the project root
+2. Check the file path matches your configuration
+3. Check the file is valid JSON
+
+### Context not injected
+
+If hooks aren't being called:
+
+1. Verify settings.json is in the right location
+2. Check the command path is correct and executable
+3. Run the hook manually to test:
+   ```bash
+   echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":"/workspace","source":"startup"}' | python3 /opt/hooks/main.py
+   ```
+
+---
 
 ## Testing the Strategy
 
@@ -367,7 +690,6 @@ client = TestClient(app)
 # Test 1: First session (no feature_list.json)
 print("Test 1: Initializer mode")
 result = client.send(MockEvent.session_start(cwd=str(tmpdir)))
-# Check events for initializer context injection
 decision_events = [e for e in events if e.event_type == "decision"]
 assert any("INITIALIZER" in (e.message or "") for e in decision_events)
 print("  ✓ Initializer context injected")
@@ -387,132 +709,7 @@ print("  ✓ Coding context with status injected")
 print("\nAll tests passed!")
 ```
 
-### Testing with Docker (Full Integration)
-
-If you have a Docker environment with Claude Code:
-
-1. Copy your hooks.py to the Docker environment
-2. Configure settings.json with hook commands
-3. Run Claude Code in the container
-4. Tail the logs:
-
-```bash
-# In one terminal
-docker compose run --rm claude claude
-
-# In another terminal
-tail -f hooks/logs/latest.jsonl | jq .
-```
-
-## Troubleshooting
-
-### "Cannot stop - uncommitted changes"
-
-The strategy is blocking stop because you have uncommitted git changes.
-
-**Fix:**
-```bash
-git add .
-git commit -m "Your message"
-```
-
-**Or disable enforcement:**
-```python
-strategy = LongRunningStrategy(enforce_commits=False)
-```
-
-### "Cannot stop - please update progress file"
-
-The strategy requires updating the progress file before stopping.
-
-**Fix:** Write to `claude-progress.txt` with your session summary.
-
-**Or disable enforcement:**
-```python
-strategy = LongRunningStrategy(require_progress_update=False)
-```
-
-### Initializer runs every session
-
-The strategy checks for `feature_list.json` existence. If it keeps running initializer:
-
-1. Check that `feature_list.json` exists in the project root
-2. Check the file path matches your configuration
-3. Check the file is valid JSON
-
-### Context not injected
-
-If hooks aren't being called:
-
-1. Verify settings.json is in the right location
-2. Check the command path is correct and executable
-3. Run the hook manually to test:
-   ```bash
-   echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":"/tmp"}' | python hooks.py
-   ```
-
-## Example: Complete Setup
-
-Here's a complete example with all features:
-
-```python
-#!/usr/bin/env python3
-"""
-Long-running agent hooks for my-project.
-Place in: ~/my-project/hooks.py
-"""
-import os
-from pathlib import Path
-
-from fasthooks import HookApp
-from fasthooks.strategies import LongRunningStrategy
-from fasthooks.observability import FileObservabilityBackend, Verbosity
-
-# Get project directory
-PROJECT_DIR = Path(os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd()))
-
-# Initialize app with state persistence
-app = HookApp(
-    state_dir=str(PROJECT_DIR / ".claude-state"),
-    log_dir=str(PROJECT_DIR / ".claude-logs"),
-)
-
-# Create strategy with custom settings
-strategy = LongRunningStrategy(
-    feature_list="features.json",
-    progress_file="PROGRESS.md",
-    init_script="scripts/dev-setup.sh",
-    min_features=50,
-    enforce_commits=True,
-    require_progress_update=True,
-)
-
-# Set up observability
-log_backend = FileObservabilityBackend(
-    base_dir=PROJECT_DIR / ".claude-logs" / "strategy",
-    verbosity=Verbosity.STANDARD,
-)
-
-@strategy.on_observe
-def handle_event(event):
-    # Log to file
-    log_backend.handle_event(event)
-
-    # Also print important events to stderr for debugging
-    if event.event_type == "decision":
-        import sys
-        print(f"[long-running] {event.decision}: {event.hook_name}", file=sys.stderr)
-
-# Register flush on exit
-import atexit
-atexit.register(log_backend.flush)
-
-# Include strategy
-app.include(strategy.get_blueprint())
-
-if __name__ == "__main__":
-    app.run()
-```
+---
 
 ## Reference
 
@@ -531,6 +728,7 @@ class LongRunningStrategy(Strategy):
         min_features: int = 30,
         enforce_commits: bool = True,
         require_progress_update: bool = True,
+        exclude_paths: list[str] | None = None,  # Default: ["hooks/", ".claude/"]
     ): ...
 
     def get_blueprint(self) -> Blueprint:
@@ -539,10 +737,6 @@ class LongRunningStrategy(Strategy):
 
     def on_observe(self, callback: Callable[[ObservabilityEvent], None]):
         """Register observer callback."""
-        ...
-
-    def get_meta(self) -> StrategyMeta:
-        """Return strategy metadata."""
         ...
 ```
 
@@ -556,7 +750,8 @@ class LongRunningStrategy(Strategy):
 | `post_tool("Write")` | `PostToolUse` | Track file modifications |
 | `post_tool("Bash")` | `PostToolUse` | Track git commits |
 
+---
+
 ## Further Reading
 
 - [Anthropic: Effective Harnesses for Long-Running Agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
-- [fasthooks Architecture](../architecture.md)
