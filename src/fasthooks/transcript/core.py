@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Generator, Literal
 
 from fasthooks.transcript.blocks import ToolResultBlock, ToolUseBlock
 from fasthooks.transcript.entries import (
@@ -261,6 +262,11 @@ class Transcript:
         """Entries before last compact boundary."""
         return self._archived
 
+    @property
+    def all_entries(self) -> list[TranscriptEntry]:
+        """All entries (archived + current)."""
+        return self._archived + self.entries
+
     def get_user_messages(
         self, include_archived: bool | None = None
     ) -> list[UserMessage]:
@@ -412,6 +418,30 @@ class Transcript:
         tmp_path = self.path.with_suffix(".jsonl.tmp")
         tmp_path.write_text(content)
         tmp_path.rename(self.path)
+
+    @contextmanager
+    def batch(self) -> Generator[None, None, None]:
+        """Context manager for batch operations with auto-save.
+
+        On success, automatically saves. On exception, rolls back changes.
+
+        Example:
+            with transcript.batch():
+                transcript.remove(entry1)
+                transcript.insert(0, new_entry)
+                # Auto-saves on success, rollback on exception
+        """
+        # Snapshot for rollback
+        entries_snapshot = list(self.entries)
+        archived_snapshot = list(self._archived)
+        try:
+            yield
+            self.save()
+        except Exception:
+            # Rollback
+            self.entries = entries_snapshot
+            self._archived = archived_snapshot
+            raise
 
     def remove(self, entry: Entry, relink: bool = True) -> None:
         """Remove entry from transcript.
