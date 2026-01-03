@@ -1421,7 +1421,7 @@ The `message.usage` field in AssistantMessage contains detailed token metrics:
 7. [x] Implement Turn grouping (by requestId)
 8. [x] Implement TranscriptQuery fluent API
 9. [x] Implement factories (create() + inject_tool_result)
-10. [ ] Implement export formats
+10. [x] Implement export formats (md, html, json, jsonl)
 11. [x] Add to fasthooks DI system (replace depends.Transcript)
 12. [x] Write tests (115+ tests)
 13. [ ] Write documentation/cookbook
@@ -1458,3 +1458,10 @@ The `message.usage` field in AssistantMessage contains detailed token metrics:
   - `AssistantMessage.create(content, parent=, context=, model="synthetic", **overrides)` - same + generates request_id, message_id
   - `inject_tool_result(transcript, tool_name, tool_input, result, is_error=, position=)` - creates matching ToolUseBlock + ToolResultBlock pair with correct ID wiring
   - Skipped: `inject_reminder`, `inject_exchange`, `summarize_tool_result` - too thin, 2 lines with create() + insert()
+- **Exports**: Multiple format support, string or file output:
+  - `to_markdown()` -> str - formatted with User/Assistant headers, tool uses, thinking (collapsed)
+  - `to_html()` -> str - markdown wrapped in HTML with basic CSS
+  - `to_json()` -> str - pretty-printed JSON array
+  - `to_jsonl()` -> str - one JSON per line
+  - `to_file(path, format="md")` -> writes to disk, supports all formats
+  - Options: `include_thinking`, `include_tool_input`, `max_content_length` for truncation

@@ -1655,3 +1655,207 @@ class TestInjectToolResult:
         assert assistant.version == "2.0.76"
         assert assistant.git_branch == "main"
         assert assistant.slug == "test-slug"
+
+
+class TestExports:
+    """Test export functionality."""
+
+    def test_to_markdown_basic(self, tmp_path):
+        """to_markdown() should produce markdown string."""
+        import json
+
+        path = tmp_path / "transcript.jsonl"
+        entries = [
+            {"type": "user", "uuid": "u1", "message": {"role": "user", "content": "Hello"}},
+            {
+                "type": "assistant",
+                "uuid": "a1",
+                "parentUuid": "u1",
+                "requestId": "req1",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Hi there!"}],
+                },
+            },
+        ]
+        with open(path, "w") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+
+        t = Transcript(path)
+        md = t.to_markdown()
+
+        assert "# Transcript" in md
+        assert "## User" in md
+        assert "Hello" in md
+        assert "## Assistant" in md
+        assert "Hi there!" in md
+
+    def test_to_markdown_with_tool_use(self, tmp_path):
+        """to_markdown() should format tool uses."""
+        import json
+
+        path = tmp_path / "transcript.jsonl"
+        entries = [
+            {"type": "user", "uuid": "u1", "message": {"role": "user", "content": "Run ls"}},
+            {
+                "type": "assistant",
+                "uuid": "a1",
+                "requestId": "req1",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "ls"}},
+                    ],
+                },
+            },
+        ]
+        with open(path, "w") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+
+        t = Transcript(path)
+        md = t.to_markdown()
+
+        assert "Tool: Bash" in md
+        assert '"command"' in md
+
+    def test_to_markdown_truncation(self, tmp_path):
+        """to_markdown() should truncate long content."""
+        import json
+
+        path = tmp_path / "transcript.jsonl"
+        long_text = "x" * 1000
+        entries = [
+            {"type": "user", "uuid": "u1", "message": {"role": "user", "content": long_text}},
+        ]
+        with open(path, "w") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+
+        t = Transcript(path)
+        md = t.to_markdown(max_content_length=100)
+
+        assert "..." in md
+        assert len(md) < 500  # Much shorter than 1000
+
+    def test_to_html_basic(self, tmp_path):
+        """to_html() should produce valid HTML."""
+        import json
+
+        path = tmp_path / "transcript.jsonl"
+        entries = [
+            {"type": "user", "uuid": "u1", "message": {"role": "user", "content": "Hello"}},
+        ]
+        with open(path, "w") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+
+        t = Transcript(path)
+        html = t.to_html(title="Test Session")
+
+        assert "<!DOCTYPE html>" in html
+        assert "<title>Test Session</title>" in html
+        assert "Hello" in html
+
+    def test_to_json_basic(self, tmp_path):
+        """to_json() should produce valid JSON array."""
+        import json
+
+        path = tmp_path / "transcript.jsonl"
+        entries = [
+            {"type": "user", "uuid": "u1", "message": {"role": "user", "content": "Hello"}},
+            {"type": "user", "uuid": "u2", "message": {"role": "user", "content": "World"}},
+        ]
+        with open(path, "w") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+
+        t = Transcript(path)
+        json_str = t.to_json()
+
+        # Should be valid JSON
+        parsed = json.loads(json_str)
+        assert isinstance(parsed, list)
+        assert len(parsed) == 2
+        assert parsed[0]["uuid"] == "u1"
+
+    def test_to_jsonl_basic(self, tmp_path):
+        """to_jsonl() should produce JSONL string."""
+        import json
+
+        path = tmp_path / "transcript.jsonl"
+        entries = [
+            {"type": "user", "uuid": "u1", "message": {"role": "user", "content": "Hello"}},
+            {"type": "user", "uuid": "u2", "message": {"role": "user", "content": "World"}},
+        ]
+        with open(path, "w") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+
+        t = Transcript(path)
+        jsonl = t.to_jsonl()
+
+        lines = jsonl.strip().split("\n")
+        assert len(lines) == 2
+        assert json.loads(lines[0])["uuid"] == "u1"
+        assert json.loads(lines[1])["uuid"] == "u2"
+
+    def test_to_file_markdown(self, tmp_path):
+        """to_file() should write markdown to disk."""
+        import json
+
+        path = tmp_path / "transcript.jsonl"
+        entries = [
+            {"type": "user", "uuid": "u1", "message": {"role": "user", "content": "Hello"}},
+        ]
+        with open(path, "w") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+
+        t = Transcript(path)
+        out_path = tmp_path / "output.md"
+        t.to_file(out_path)
+
+        assert out_path.exists()
+        content = out_path.read_text()
+        assert "# Transcript" in content
+        assert "Hello" in content
+
+    def test_to_file_formats(self, tmp_path):
+        """to_file() should support all formats."""
+        import json
+
+        path = tmp_path / "transcript.jsonl"
+        entries = [
+            {"type": "user", "uuid": "u1", "message": {"role": "user", "content": "Hello"}},
+        ]
+        with open(path, "w") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+
+        t = Transcript(path)
+
+        # All formats should work
+        for fmt, ext in [("md", ".md"), ("html", ".html"), ("json", ".json"), ("jsonl", ".jsonl")]:
+            out_path = tmp_path / f"output{ext}"
+            t.to_file(out_path, format=fmt)
+            assert out_path.exists()
+            assert out_path.stat().st_size > 0
+
+    def test_to_file_invalid_format(self, tmp_path):
+        """to_file() should raise on invalid format."""
+        import json
+
+        path = tmp_path / "transcript.jsonl"
+        entries = [
+            {"type": "user", "uuid": "u1", "message": {"role": "user", "content": "Hello"}},
+        ]
+        with open(path, "w") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+
+        t = Transcript(path)
+
+        with pytest.raises(ValueError, match="Unknown format"):
+            t.to_file(tmp_path / "out.txt", format="txt")

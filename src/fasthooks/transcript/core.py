@@ -550,6 +550,117 @@ class Transcript:
         """Calculate transcript statistics."""
         return TranscriptStats.from_transcript(self)
 
+    # === Export ===
+
+    def to_markdown(
+        self,
+        *,
+        include_thinking: bool = True,
+        include_tool_input: bool = True,
+        max_content_length: int | None = 500,
+    ) -> str:
+        """Export transcript to markdown string.
+
+        Args:
+            include_thinking: Include thinking blocks (collapsed)
+            include_tool_input: Include tool input JSON
+            max_content_length: Truncate long content (None = no limit)
+
+        Returns:
+            Markdown formatted string
+        """
+        from fasthooks.transcript.exports import to_markdown
+
+        return to_markdown(
+            self,
+            include_thinking=include_thinking,
+            include_tool_input=include_tool_input,
+            max_content_length=max_content_length,
+        )
+
+    def to_html(
+        self,
+        *,
+        include_thinking: bool = True,
+        include_tool_input: bool = True,
+        max_content_length: int | None = 500,
+        title: str = "Transcript",
+    ) -> str:
+        """Export transcript to HTML string.
+
+        Args:
+            include_thinking: Include thinking blocks
+            include_tool_input: Include tool input JSON
+            max_content_length: Truncate long content
+            title: HTML page title
+
+        Returns:
+            HTML formatted string
+        """
+        from fasthooks.transcript.exports import to_html
+
+        return to_html(
+            self,
+            include_thinking=include_thinking,
+            include_tool_input=include_tool_input,
+            max_content_length=max_content_length,
+            title=title,
+        )
+
+    def to_json(self, *, indent: int = 2) -> str:
+        """Export transcript to pretty-printed JSON array.
+
+        Args:
+            indent: JSON indentation (default 2)
+
+        Returns:
+            JSON array string
+        """
+        from fasthooks.transcript.exports import to_json
+
+        return to_json(self, indent=indent)
+
+    def to_jsonl(self) -> str:
+        """Export transcript to JSONL string.
+
+        Returns:
+            JSONL formatted string (one JSON object per line)
+        """
+        from fasthooks.transcript.exports import to_jsonl
+
+        return to_jsonl(self)
+
+    def to_file(
+        self,
+        path: str | Path,
+        format: Literal["md", "html", "json", "jsonl"] = "md",
+        **kwargs: Any,
+    ) -> None:
+        """Export transcript to file.
+
+        Args:
+            path: Output file path
+            format: Export format (md, html, json, jsonl)
+            **kwargs: Additional arguments passed to the format method
+
+        Example:
+            transcript.to_file("output.md")
+            transcript.to_file("output.html", format="html", title="My Session")
+            transcript.to_file("output.json", format="json", indent=4)
+        """
+        if format == "md":
+            content = self.to_markdown(**kwargs)
+        elif format == "html":
+            content = self.to_html(**kwargs)
+        elif format == "json":
+            content = self.to_json(**kwargs)
+        elif format == "jsonl":
+            content = self.to_jsonl()
+        else:
+            raise ValueError(f"Unknown format: {format!r}. Use: md, html, json, jsonl")
+
+        Path(path).write_text(content)
+
     # === Iteration ===
 
     def __iter__(self) -> Iterator[TranscriptEntry]:
