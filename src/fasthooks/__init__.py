@@ -3,11 +3,13 @@ from fasthooks.app import HookApp
 from fasthooks.blueprint import Blueprint
 from fasthooks.responses import (
     BaseHookResponse,
+    ContextResponse,
     HookResponse,
     PermissionHookResponse,
     allow,
     approve_permission,
     block,
+    context,
     deny,
     deny_permission,
 )
@@ -15,12 +17,14 @@ from fasthooks.responses import (
 __all__ = [
     "BaseHookResponse",
     "Blueprint",
+    "ContextResponse",
     "HookApp",
     "HookResponse",
     "PermissionHookResponse",
     "allow",
     "approve_permission",
     "block",
+    "context",
     "deny",
     "deny_permission",
 ]

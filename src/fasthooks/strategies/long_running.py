@@ -14,7 +14,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Literal
 
-from fasthooks import Blueprint, allow, block
+from fasthooks import Blueprint, allow, block, context
 from fasthooks.depends import State
 
 from .base import Strategy
@@ -337,15 +337,15 @@ class LongRunningStrategy(Strategy):
             if not feature_file.exists():
                 # First run - inject initializer context
                 self.emit_custom("session_type", {"type": "initializer"})
-                return allow(message=self._get_initializer_context())
+                return context(self._get_initializer_context())
             else:
                 # Subsequent run - inject coding context
                 self.emit_custom("session_type", {"type": "coding"})
-                return allow(message=self._get_coding_context(project_dir, ns))
+                return context(self._get_coding_context(project_dir, ns))
         else:
             # Compact or resume
             self.emit_custom("session_type", {"type": "compact_resume"})
-            return allow(message=self._get_compact_context(project_dir, ns))
+            return context(self._get_compact_context(project_dir, ns))
 
     def _get_initializer_context(self) -> str:
         """Build initializer prompt."""
