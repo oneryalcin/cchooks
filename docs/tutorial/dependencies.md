@@ -44,43 +44,30 @@ def check(event, transcript: Transcript):
     stats = transcript.stats
 
     # Token usage
-    print(f"Input tokens: {stats.input_tokens}")
-    print(f"Output tokens: {stats.output_tokens}")
-    print(f"Cache read: {stats.cache_read_tokens}")
+    print(f"Tokens: {stats.input_tokens} in / {stats.output_tokens} out")
 
     # Tool usage
     print(f"Tool calls: {stats.tool_calls}")  # {"Bash": 5, "Write": 2}
-    print(f"Files read: {stats.files_read_count}")
-    print(f"Files written: {stats.files_written_count}")
+    print(f"Errors: {stats.error_count}")
 
-    # Session info
-    print(f"Duration: {stats.duration_seconds}s")
-    print(f"Compacts: {stats.compact_count}")
+    # Entries
+    print(f"Messages: {len(transcript.entries)}")
+    print(f"Turns: {stats.turn_count}")
 ```
 
-#### Transcript Properties
+The Transcript provides rich querying, CRUD operations, and context engineering capabilities.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `stats` | `TranscriptStats` | Aggregated statistics |
-| `messages` | `list[dict]` | All user/assistant messages |
-| `last_assistant_message` | `str` | Text of last assistant response |
-| `bash_commands` | `list[str]` | All bash commands in session |
+**See [Transcript & Context Engineering](transcript.md) for full documentation.**
 
-#### TranscriptStats Fields
+Quick overview:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `input_tokens` | `int` | Total input tokens used |
-| `output_tokens` | `int` | Total output tokens used |
-| `cache_read_tokens` | `int` | Tokens read from cache |
-| `cache_creation_tokens` | `int` | Tokens added to cache |
-| `tool_calls` | `dict[str, int]` | Tool name → call count |
-| `files_read_count` | `int` | Unique files read |
-| `files_written_count` | `int` | Unique files written |
-| `duration_seconds` | `float` | Session duration |
-| `compact_count` | `int` | Number of context compactions |
-| `message_counts` | `dict[str, int]` | Message type counts |
+| Feature | Example |
+|---------|---------|
+| Query entries | `transcript.query().assistants().with_tools().all()` |
+| Statistics | `transcript.stats.input_tokens` |
+| Create entries | `UserMessage.create("reminder", context=entry)` |
+| Inject tool results | `inject_tool_result(transcript, "Bash", {...}, "output")` |
+| Export | `transcript.to_markdown()`, `transcript.to_file("out.md")` |
 
 ### State
 

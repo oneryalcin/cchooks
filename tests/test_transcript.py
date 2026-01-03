@@ -1,27 +1,28 @@
-"""Tests for Transcript dependency."""
+"""Tests for Transcript dependency (DI integration)."""
 import json
+from pathlib import Path
 
 import pytest
 
-from fasthooks.depends import Transcript
+from fasthooks.depends import Transcript, TranscriptStats
 
 
 class TestTranscriptBasic:
     def test_create_transcript(self):
         """Transcript can be instantiated with path."""
-        t = Transcript("/some/path.jsonl")
-        assert t.path == "/some/path.jsonl"
+        t = Transcript("/some/path.jsonl", auto_load=False)
+        assert t.path == Path("/some/path.jsonl")
 
     def test_transcript_none_path(self):
         """Transcript handles None path gracefully."""
         t = Transcript(None)
         assert t.path is None
-        assert t.stats.message_counts == {}
+        assert t.stats.message_count == 0
 
     def test_transcript_missing_file(self):
         """Transcript handles missing file gracefully."""
         t = Transcript("/nonexistent/path.jsonl")
-        assert t.stats.message_counts == {}
+        assert t.stats.message_count == 0
 
 
 class TestTranscriptStats:
@@ -32,23 +33,45 @@ class TestTranscriptStats:
         entries = [
             {
                 "type": "system",
+                "uuid": "sys-1",
                 "timestamp": "2024-01-01T10:00:00Z",
                 "slug": "test-session",
             },
             {
                 "type": "user",
+                "uuid": "user-1",
+                "parentUuid": "sys-1",
                 "timestamp": "2024-01-01T10:00:01Z",
-                "message": {"content": "Hello"},
+                "message": {"role": "user", "content": "Hello"},
             },
             {
                 "type": "assistant",
+                "uuid": "asst-1",
+                "parentUuid": "user-1",
+                "requestId": "req-1",
                 "timestamp": "2024-01-01T10:00:05Z",
                 "message": {
+                    "role": "assistant",
                     "content": [
                         {"type": "text", "text": "Hi there!"},
-                        {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}},
-                        {"type": "tool_use", "name": "Bash", "input": {"command": "pwd"}},
-                        {"type": "tool_use", "name": "Read", "input": {"file_path": "/test.py"}},
+                        {
+                            "type": "tool_use",
+                            "id": "tool-1",
+                            "name": "Bash",
+                            "input": {"command": "ls"},
+                        },
+                        {
+                            "type": "tool_use",
+                            "id": "tool-2",
+                            "name": "Bash",
+                            "input": {"command": "pwd"},
+                        },
+                        {
+                            "type": "tool_use",
+                            "id": "tool-3",
+                            "name": "Read",
+                            "input": {"file_path": "/test.py"},
+                        },
                     ],
                     "usage": {
                         "input_tokens": 100,
@@ -60,16 +83,27 @@ class TestTranscriptStats:
             },
             {
                 "type": "user",
+                "uuid": "user-2",
+                "parentUuid": "asst-1",
                 "timestamp": "2024-01-01T10:00:10Z",
-                "message": {"content": "Thanks"},
+                "message": {"role": "user", "content": "Thanks"},
             },
             {
                 "type": "assistant",
+                "uuid": "asst-2",
+                "parentUuid": "user-2",
+                "requestId": "req-2",
                 "timestamp": "2024-01-01T10:00:15Z",
                 "message": {
+                    "role": "assistant",
                     "content": [
                         {"type": "text", "text": "You're welcome!"},
-                        {"type": "tool_use", "name": "Write", "input": {"file_path": "/out.txt"}},
+                        {
+                            "type": "tool_use",
+                            "id": "tool-4",
+                            "name": "Write",
+                            "input": {"file_path": "/out.txt"},
+                        },
                     ],
                     "usage": {
                         "input_tokens": 150,
@@ -83,10 +117,11 @@ class TestTranscriptStats:
                 f.write(json.dumps(entry) + "\n")
         return transcript_file
 
-    def test_message_counts(self, sample_transcript):
-        """Stats includes message counts by type."""
+    def test_message_count(self, sample_transcript):
+        """Stats includes message count."""
         t = Transcript(str(sample_transcript))
-        assert t.stats.message_counts == {"user": 2, "assistant": 2, "system": 1}
+        # 2 user + 2 assistant = 4 messages
+        assert t.stats.message_count == 4
 
     def test_tool_calls(self, sample_transcript):
         """Stats includes tool call counts."""
@@ -104,43 +139,44 @@ class TestTranscriptStats:
     def test_duration(self, sample_transcript):
         """Stats includes session duration."""
         t = Transcript(str(sample_transcript))
-        assert t.stats.duration_seconds == 15.0
-
-    def test_file_counts(self, sample_transcript):
-        """Stats includes file read/write counts."""
-        t = Transcript(str(sample_transcript))
-        assert t.stats.files_read_count == 1
-        assert t.stats.files_written_count == 1
+        assert t.stats.duration_seconds == 15.0  # 10:00:00 (system) to 10:00:15
 
     def test_slug(self, sample_transcript):
         """Stats includes session slug."""
         t = Transcript(str(sample_transcript))
         assert t.stats.slug == "test-session"
 
+    def test_turn_count(self, sample_transcript):
+        """Stats includes turn count."""
+        t = Transcript(str(sample_transcript))
+        assert t.stats.turn_count == 2  # 2 request IDs
 
-class TestTranscriptLazyLoading:
-    def test_stats_not_parsed_until_accessed(self, tmp_path):
-        """Transcript doesn't parse until stats accessed."""
+
+class TestTranscriptAutoLoad:
+    def test_auto_load_enabled_by_default(self, tmp_path):
+        """Transcript auto-loads when path provided."""
         transcript_file = tmp_path / "transcript.jsonl"
-        transcript_file.write_text('{"type": "user"}\n')
+        transcript_file.write_text('{"type": "user", "uuid": "u1", "message": {"role": "user", "content": "hi"}}\n')
 
         t = Transcript(str(transcript_file))
-        # Cache should be None before access
-        assert t._stats_cache is None
+        # Should be loaded already
+        assert t._loaded is True
+        assert len(t.entries) == 1
 
-        # Access stats triggers parsing
-        _ = t.stats
-        assert t._stats_cache is not None
-
-    def test_stats_cached(self, tmp_path):
-        """Stats are cached after first access."""
+    def test_auto_load_disabled(self, tmp_path):
+        """Transcript doesn't load when auto_load=False."""
         transcript_file = tmp_path / "transcript.jsonl"
-        transcript_file.write_text('{"type": "user"}\n')
+        transcript_file.write_text('{"type": "user", "uuid": "u1", "message": {"role": "user", "content": "hi"}}\n')
 
-        t = Transcript(str(transcript_file))
-        stats1 = t.stats
-        stats2 = t.stats
-        assert stats1 is stats2  # Same object
+        t = Transcript(str(transcript_file), auto_load=False)
+        # Should not be loaded yet
+        assert t._loaded is False
+        assert len(t.entries) == 0
+
+        # Explicit load
+        t.load()
+        assert t._loaded is True
+        assert len(t.entries) == 1
 
 
 class TestTranscriptMessages:
@@ -151,11 +187,16 @@ class TestTranscriptMessages:
         entries = [
             {
                 "type": "user",
-                "message": {"content": "First question"},
+                "uuid": "u1",
+                "message": {"role": "user", "content": "First question"},
             },
             {
                 "type": "assistant",
+                "uuid": "a1",
+                "parentUuid": "u1",
+                "requestId": "r1",
                 "message": {
+                    "role": "assistant",
                     "content": [
                         {"type": "text", "text": "First answer"},
                     ],
@@ -163,11 +204,17 @@ class TestTranscriptMessages:
             },
             {
                 "type": "user",
-                "message": {"content": "Second question"},
+                "uuid": "u2",
+                "parentUuid": "a1",
+                "message": {"role": "user", "content": "Second question"},
             },
             {
                 "type": "assistant",
+                "uuid": "a2",
+                "parentUuid": "u2",
+                "requestId": "r2",
                 "message": {
+                    "role": "assistant",
                     "content": [
                         {"type": "text", "text": "Second answer"},
                     ],
@@ -179,38 +226,69 @@ class TestTranscriptMessages:
                 f.write(json.dumps(entry) + "\n")
         return transcript_file
 
-    def test_messages_property(self, transcript_with_messages):
-        """Can access all messages."""
+    def test_user_messages(self, transcript_with_messages):
+        """Can access user messages."""
         t = Transcript(str(transcript_with_messages))
-        assert len(t.messages) == 4
+        assert len(t.user_messages) == 2
+        assert t.user_messages[0].text == "First question"
+        assert t.user_messages[1].text == "Second question"
 
-    def test_last_assistant_message(self, transcript_with_messages):
-        """Can get last assistant message."""
+    def test_assistant_messages(self, transcript_with_messages):
+        """Can access assistant messages."""
         t = Transcript(str(transcript_with_messages))
-        assert t.last_assistant_message == "Second answer"
+        assert len(t.assistant_messages) == 2
+        assert t.assistant_messages[0].text == "First answer"
+        assert t.assistant_messages[1].text == "Second answer"
 
 
-class TestTranscriptBashCommands:
+class TestTranscriptToolUses:
     @pytest.fixture
-    def transcript_with_bash(self, tmp_path):
-        """Create transcript with bash commands."""
+    def transcript_with_tools(self, tmp_path):
+        """Create transcript with tool uses."""
         transcript_file = tmp_path / "transcript.jsonl"
         entries = [
             {
                 "type": "assistant",
+                "uuid": "a1",
+                "requestId": "r1",
                 "message": {
+                    "role": "assistant",
                     "content": [
-                        {"type": "tool_use", "name": "Bash", "input": {"command": "ls -la"}},
-                        {"type": "tool_use", "name": "Bash", "input": {"command": "pwd"}},
+                        {
+                            "type": "tool_use",
+                            "id": "t1",
+                            "name": "Bash",
+                            "input": {"command": "ls -la"},
+                        },
+                        {
+                            "type": "tool_use",
+                            "id": "t2",
+                            "name": "Bash",
+                            "input": {"command": "pwd"},
+                        },
                     ],
                 },
             },
             {
                 "type": "assistant",
+                "uuid": "a2",
+                "parentUuid": "a1",
+                "requestId": "r2",
                 "message": {
+                    "role": "assistant",
                     "content": [
-                        {"type": "tool_use", "name": "Read", "input": {"file_path": "/test"}},
-                        {"type": "tool_use", "name": "Bash", "input": {"command": "git status"}},
+                        {
+                            "type": "tool_use",
+                            "id": "t3",
+                            "name": "Read",
+                            "input": {"file_path": "/test"},
+                        },
+                        {
+                            "type": "tool_use",
+                            "id": "t4",
+                            "name": "Bash",
+                            "input": {"command": "git status"},
+                        },
                     ],
                 },
             },
@@ -220,7 +298,36 @@ class TestTranscriptBashCommands:
                 f.write(json.dumps(entry) + "\n")
         return transcript_file
 
-    def test_bash_commands(self, transcript_with_bash):
-        """Can extract all bash commands."""
-        t = Transcript(str(transcript_with_bash))
-        assert t.bash_commands == ["ls -la", "pwd", "git status"]
+    def test_tool_uses(self, transcript_with_tools):
+        """Can extract all tool uses."""
+        t = Transcript(str(transcript_with_tools))
+        tool_uses = t.tool_uses
+        assert len(tool_uses) == 4
+
+        # Check Bash commands
+        bash_uses = [tu for tu in tool_uses if tu.name == "Bash"]
+        assert len(bash_uses) == 3
+        commands = [tu.input.get("command") for tu in bash_uses]
+        assert "ls -la" in commands
+        assert "pwd" in commands
+        assert "git status" in commands
+
+
+class TestDIIntegration:
+    """Test that Transcript works correctly when injected via DI."""
+
+    def test_transcript_from_depends_import(self):
+        """Can import Transcript from fasthooks.depends."""
+        from fasthooks.depends import Transcript as DepTranscript
+        from fasthooks.transcript import Transcript as CoreTranscript
+
+        # They should be the same class
+        assert DepTranscript is CoreTranscript
+
+    def test_transcript_stats_from_depends_import(self):
+        """Can import TranscriptStats from fasthooks.depends."""
+        from fasthooks.depends import TranscriptStats as DepStats
+        from fasthooks.transcript import TranscriptStats as CoreStats
+
+        # They should be the same class
+        assert DepStats is CoreStats

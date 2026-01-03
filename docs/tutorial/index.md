@@ -9,10 +9,11 @@ This tutorial covers:
 1. **[Events](events.md)** - Understanding hook events and typed tool events
 2. **[Responses](responses.md)** - Using `allow()`, `deny()`, and `block()`
 3. **[Dependencies](dependencies.md)** - Inject State and Transcript into handlers
-4. **[Background Tasks](background-tasks.md)** - Spawn async work that feeds back later
-5. **[Blueprints](blueprints.md)** - Organize handlers into reusable modules
-6. **[Middleware](middleware.md)** - Cross-cutting concerns (timing, logging)
-7. **[Testing](testing.md)** - Writing tests with `MockEvent` and `TestClient`
+4. **[Transcript](transcript.md)** - Context engineering and memory editing
+5. **[Background Tasks](background-tasks.md)** - Spawn async work that feeds back later
+6. **[Blueprints](blueprints.md)** - Organize handlers into reusable modules
+7. **[Middleware](middleware.md)** - Cross-cutting concerns (timing, logging)
+8. **[Testing](testing.md)** - Writing tests with `MockEvent` and `TestClient`
 
 ## Core Concepts
 

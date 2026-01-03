@@ -10,6 +10,7 @@ Auto-generated API documentation from source code docstrings.
 | [Responses](responses.md) | Response builders (`allow`, `deny`, `block`) |
 | [Events](events.md) | Event types for tools and lifecycle |
 | [Dependencies](depends.md) | Injectable dependencies (`Transcript`, `State`) |
+| [Transcript](transcript.md) | Rich transcript modeling and context engineering |
 | [Tasks](tasks.md) | Background task system |
 | [Claude Integration](contrib-claude.md) | Claude Agent SDK wrapper |
 | [Testing](testing.md) | Testing utilities |
@@ -23,6 +24,14 @@ from fasthooks import allow, deny, block
 
 # Dependencies
 from fasthooks.depends import Transcript, State
+
+# Transcript (context engineering)
+from fasthooks.transcript import (
+    Transcript,
+    UserMessage,
+    AssistantMessage,
+    inject_tool_result,
+)
 
 # Background Tasks
 from fasthooks.tasks import task, Tasks

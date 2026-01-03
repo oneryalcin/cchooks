@@ -40,6 +40,7 @@ nav:
   - Tutorial:
       - tutorial/index.md
       - Events: tutorial/events.md
+      - Transcript: tutorial/transcript.md
       - Responses: tutorial/responses.md
       - Dependencies: tutorial/dependencies.md
       - Background Tasks: tutorial/background-tasks.md
@@ -55,6 +56,7 @@ nav:
       - api/events.md
       - api/depends.md
       - api/tasks.md
+      - api/transcript.md
       - api/contrib-claude.md
       - api/testing.md
   - Comparisons:
