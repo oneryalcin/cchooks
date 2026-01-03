@@ -1423,8 +1423,8 @@ The `message.usage` field in AssistantMessage contains detailed token metrics:
 9. [x] Implement factories (create() + inject_tool_result)
 10. [x] Implement export formats (md, html, json, jsonl)
 11. [x] Add to fasthooks DI system (replace depends.Transcript)
-12. [x] Write tests (115+ tests)
-13. [ ] Write documentation/cookbook
+12. [x] Write tests (351 tests)
+13. [x] Write documentation (tutorial + API reference)
 
 ### Implementation Notes (v1)
 
