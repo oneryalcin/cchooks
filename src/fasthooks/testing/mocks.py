@@ -3,8 +3,26 @@ from __future__ import annotations
 
 from typing import Any
 
-from fasthooks.events.lifecycle import PreCompact, SessionStart, Stop
-from fasthooks.events.tools import Bash, Edit, Read, Write
+from fasthooks.events.lifecycle import (
+    Notification,
+    PreCompact,
+    SessionEnd,
+    SessionStart,
+    Stop,
+    SubagentStop,
+    UserPromptSubmit,
+)
+from fasthooks.events.tools import (
+    Bash,
+    Edit,
+    Glob,
+    Grep,
+    Read,
+    Task,
+    WebFetch,
+    WebSearch,
+    Write,
+)
 
 
 class MockEvent:
@@ -149,6 +167,196 @@ class MockEvent:
             permission_mode="default",
             hook_event_name="PreCompact",
             trigger=trigger,
+        )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Additional tool events
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def grep(
+        pattern: str,
+        *,
+        path: str | None = None,
+        glob: str | None = None,
+        output_mode: str | None = None,
+        session_id: str = "test-session",
+        cwd: str = "/workspace",
+    ) -> Grep:
+        """Create a Grep PreToolUse event."""
+        tool_input: dict[str, Any] = {"pattern": pattern}
+        if path:
+            tool_input["path"] = path
+        if glob:
+            tool_input["glob"] = glob
+        if output_mode:
+            tool_input["output_mode"] = output_mode
+
+        return Grep(
+            session_id=session_id,
+            cwd=cwd,
+            permission_mode="default",
+            hook_event_name="PreToolUse",
+            tool_name="Grep",
+            tool_input=tool_input,
+            tool_use_id="test-tool-use",
+        )
+
+    @staticmethod
+    def glob(
+        pattern: str,
+        *,
+        path: str | None = None,
+        session_id: str = "test-session",
+        cwd: str = "/workspace",
+    ) -> Glob:
+        """Create a Glob PreToolUse event."""
+        tool_input: dict[str, Any] = {"pattern": pattern}
+        if path:
+            tool_input["path"] = path
+
+        return Glob(
+            session_id=session_id,
+            cwd=cwd,
+            permission_mode="default",
+            hook_event_name="PreToolUse",
+            tool_name="Glob",
+            tool_input=tool_input,
+            tool_use_id="test-tool-use",
+        )
+
+    @staticmethod
+    def task(
+        prompt: str,
+        *,
+        description: str = "Test task",
+        subagent_type: str | None = None,
+        model: str | None = None,
+        session_id: str = "test-session",
+        cwd: str = "/workspace",
+    ) -> Task:
+        """Create a Task PreToolUse event."""
+        tool_input: dict[str, Any] = {"prompt": prompt, "description": description}
+        if subagent_type:
+            tool_input["subagent_type"] = subagent_type
+        if model:
+            tool_input["model"] = model
+
+        return Task(
+            session_id=session_id,
+            cwd=cwd,
+            permission_mode="default",
+            hook_event_name="PreToolUse",
+            tool_name="Task",
+            tool_input=tool_input,
+            tool_use_id="test-tool-use",
+        )
+
+    @staticmethod
+    def web_search(
+        query: str,
+        *,
+        session_id: str = "test-session",
+        cwd: str = "/workspace",
+    ) -> WebSearch:
+        """Create a WebSearch PreToolUse event."""
+        return WebSearch(
+            session_id=session_id,
+            cwd=cwd,
+            permission_mode="default",
+            hook_event_name="PreToolUse",
+            tool_name="WebSearch",
+            tool_input={"query": query},
+            tool_use_id="test-tool-use",
+        )
+
+    @staticmethod
+    def web_fetch(
+        url: str,
+        prompt: str = "",
+        *,
+        session_id: str = "test-session",
+        cwd: str = "/workspace",
+    ) -> WebFetch:
+        """Create a WebFetch PreToolUse event."""
+        return WebFetch(
+            session_id=session_id,
+            cwd=cwd,
+            permission_mode="default",
+            hook_event_name="PreToolUse",
+            tool_name="WebFetch",
+            tool_input={"url": url, "prompt": prompt},
+            tool_use_id="test-tool-use",
+        )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Additional lifecycle events
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def subagent_stop(
+        *,
+        stop_hook_active: bool = False,
+        session_id: str = "test-session",
+        cwd: str = "/workspace",
+    ) -> SubagentStop:
+        """Create a SubagentStop event."""
+        return SubagentStop(
+            session_id=session_id,
+            cwd=cwd,
+            permission_mode="default",
+            hook_event_name="SubagentStop",
+            stop_hook_active=stop_hook_active,
+        )
+
+    @staticmethod
+    def session_end(
+        reason: str = "user_exit",
+        *,
+        session_id: str = "test-session",
+        cwd: str = "/workspace",
+    ) -> SessionEnd:
+        """Create a SessionEnd event."""
+        return SessionEnd(
+            session_id=session_id,
+            cwd=cwd,
+            permission_mode="default",
+            hook_event_name="SessionEnd",
+            reason=reason,
+        )
+
+    @staticmethod
+    def user_prompt(
+        prompt: str,
+        *,
+        session_id: str = "test-session",
+        cwd: str = "/workspace",
+    ) -> UserPromptSubmit:
+        """Create a UserPromptSubmit event."""
+        return UserPromptSubmit(
+            session_id=session_id,
+            cwd=cwd,
+            permission_mode="default",
+            hook_event_name="UserPromptSubmit",
+            prompt=prompt,
+        )
+
+    @staticmethod
+    def notification(
+        message: str,
+        notification_type: str = "info",
+        *,
+        session_id: str = "test-session",
+        cwd: str = "/workspace",
+    ) -> Notification:
+        """Create a Notification event."""
+        return Notification(
+            session_id=session_id,
+            cwd=cwd,
+            permission_mode="default",
+            hook_event_name="Notification",
+            message=message,
+            notification_type=notification_type,
         )
 
     # ═══════════════════════════════════════════════════════════════════════════

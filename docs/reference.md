@@ -24,7 +24,7 @@ app = HookApp(
 @app.pre_tool("Bash")           # Before tool executes
 @app.pre_tool("*")              # All tools
 @app.post_tool("Write")         # After tool executes
-@app.permission_request("Bash") # Permission dialog shown
+@app.on_permission("Bash")      # Permission dialog shown
 
 # Lifecycle events
 @app.on_stop()                  # Claude stops
@@ -33,7 +33,7 @@ app = HookApp(
 @app.on_session_end()           # Session ends
 @app.on_notification()          # Notification sent
 @app.on_pre_compact()           # Before compaction
-@app.on_user_prompt_submit()    # User submits prompt
+@app.on_prompt()                # User submits prompt
 ```
 
 ### Guards
@@ -58,11 +58,11 @@ from fasthooks import allow, deny, block
 
 # Allow the action
 allow()
-allow(system_message="Warning: sensitive file")
+allow(message="Warning: sensitive file")
 
 # Deny the action (PreToolUse, PermissionRequest)
 deny("Reason shown to Claude")
-deny("Reason", system_message="Warning to user")
+deny("Reason", interrupt=True)  # Stop Claude entirely
 
 # Block stopping (Stop, SubagentStop)
 block("Reason to continue")

@@ -148,7 +148,7 @@ def add_warnings(event, call_next):
 
     # Add warning to all denials
     if result and result.decision == "deny":
-        result.system_message = f"⚠️ Blocked: {result.reason}"
+        result.message = f"⚠️ Blocked: {result.reason}"
 
     return result
 ```

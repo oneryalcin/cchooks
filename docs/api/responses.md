@@ -39,5 +39,6 @@ Response builders for hook handlers.
       members:
         - decision
         - reason
-        - system_message
+        - message
+        - interrupt
         - to_json

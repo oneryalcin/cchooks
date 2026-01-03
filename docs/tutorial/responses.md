@@ -58,21 +58,20 @@ def check(event):
 
 ## Response Options
 
-### system_message
+### message
 
-Add a warning shown to the user:
+Add a system message shown to the user:
 
 ```python
-return allow(system_message="This file is sensitive")
-return deny("Blocked", system_message="Contact admin for access")
+return allow(message="This file is sensitive")
 ```
 
-### continue_
+### interrupt
 
 Stop Claude entirely (not just block this action):
 
 ```python
-return deny("Session limit reached", continue_=False)
+return deny("Session limit reached", interrupt=True)
 ```
 
 ## Response by Hook Type

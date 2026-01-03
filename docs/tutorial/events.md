@@ -32,7 +32,7 @@ def after_write(event):
 Runs when Claude asks for permission. Can auto-allow or auto-deny.
 
 ```python
-@app.permission_request("Bash")
+@app.on_permission("Bash")
 def auto_allow_safe(event):
     if event.command.startswith("ls"):
         return allow()  # Auto-approve ls commands

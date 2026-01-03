@@ -4,16 +4,19 @@ Injectable dependencies for hook handlers.
 
 ## Transcript
 
-Access to the conversation history and statistics.
+Access to the conversation history and statistics. See [Transcript API](transcript.md) for full documentation.
 
 ::: fasthooks.depends.transcript.Transcript
     options:
       members:
         - __init__
         - stats
-        - messages
-        - last_assistant_message
-        - bash_commands
+        - entries
+        - user_messages
+        - assistant_messages
+        - tool_uses
+        - tool_results
+        - query
 
 ::: fasthooks.depends.transcript.TranscriptStats
     options:
@@ -22,13 +25,12 @@ Access to the conversation history and statistics.
         - output_tokens
         - cache_read_tokens
         - cache_creation_tokens
-        - total_tokens
         - tool_calls
-        - files_read_count
-        - files_written_count
-        - duration_seconds
+        - error_count
+        - message_count
+        - turn_count
         - compact_count
-        - message_counts
+        - duration_seconds
         - slug
 
 ## State

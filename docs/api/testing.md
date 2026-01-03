@@ -23,9 +23,11 @@ Factory for creating test events.
         - session_start
         - session_end
         - pre_compact
-        - user_prompt_submit
+        - user_prompt
         - notification
-        - permission_request
+        - permission_bash
+        - permission_write
+        - permission_edit
 
 ## TestClient
 

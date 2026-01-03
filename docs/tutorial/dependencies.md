@@ -144,7 +144,7 @@ def check_budget(event, transcript: Transcript):
     total = stats.input_tokens + stats.output_tokens
 
     if total > 100_000:
-        return allow(system_message=f"Warning: {total:,} tokens used")
+        return allow(message=f"Warning: {total:,} tokens used")
 ```
 
 ### Command History Analysis
@@ -152,8 +152,9 @@ def check_budget(event, transcript: Transcript):
 ```python
 @app.pre_tool("Bash")
 def no_repeated_failures(event, transcript: Transcript):
-    # Check if same command failed recently
-    recent_commands = transcript.bash_commands[-5:]
+    # Query recent Bash tool uses
+    recent = transcript.query().tool_uses("Bash").last(5).all()
+    recent_commands = [e.tool_input.get("command") for e in recent]
     if event.command in recent_commands:
         return deny("This command was already tried recently")
 ```
