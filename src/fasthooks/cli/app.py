@@ -70,8 +70,9 @@ def init(
     ] = False,
 ) -> None:
     """Create a new hooks.py with boilerplate."""
-    console.print("[yellow]Not implemented yet[/yellow]")
-    raise typer.Exit(code=0)
+    from fasthooks.cli.commands.init import run_init
+
+    raise typer.Exit(code=run_init(path, force, console))
 
 
 @app.command()
