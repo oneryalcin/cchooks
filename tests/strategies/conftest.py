@@ -1,7 +1,8 @@
 """Strategy-specific test fixtures."""
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from fasthooks.strategies import LongRunningStrategy
 from fasthooks.testing import StrategyTestClient

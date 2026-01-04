@@ -120,6 +120,6 @@ class TestCustomEvents:
             events.append(event)
 
         # Need to trigger a hook to set up context
-        bp = strategy.get_blueprint()
+        _ = strategy.get_blueprint()
         # The emit happens inside the handler, so we need to invoke it
         # This is tested more thoroughly in observability tests

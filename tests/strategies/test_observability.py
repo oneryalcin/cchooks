@@ -1,12 +1,10 @@
 """Tests for strategy observability."""
 
-import pytest
 from pathlib import Path
 
-from fasthooks import Blueprint, allow, deny
+from fasthooks import Blueprint, allow
 from fasthooks.observability import (
     DecisionEvent,
-    ErrorEvent,
     FileObservabilityBackend,
     ObservabilityEvent,
     Verbosity,

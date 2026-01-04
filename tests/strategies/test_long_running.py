@@ -1,10 +1,10 @@
 """Tests for LongRunningStrategy."""
 
 import json
-import pytest
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+
+import pytest
 
 from fasthooks.strategies import LongRunningStrategy
 from fasthooks.testing import StrategyTestClient

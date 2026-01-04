@@ -1,43 +1,197 @@
 # Strategies
 
-Strategies are reusable, composable hook patterns that solve common problems. They provide an abstraction layer above raw hooks, enabling users to adopt proven patterns without understanding hook internals.
+## Raw Hooks vs Strategy: When to Use Which
 
-## What is a Strategy?
+**Raw fasthooks** and **Strategy** can both accomplish the same things. The difference is in packaging and reuse.
 
-A Strategy bundles related hooks with configuration:
+### Use Raw Hooks When:
+
+- Building project-specific hooks
+- Simple logic (1-2 hooks, minimal state)
+- You want maximum transparency
+- Learning how fasthooks works
 
 ```python
+# Raw fasthooks - simple, transparent, project-specific
+from fasthooks import HookApp, deny
+from fasthooks.depends import State
+
+app = HookApp(state_dir="/tmp/hook-state")
+
+@app.pre_tool("Bash")
+def rate_limit(event, state: State):
+    count = state.get("bash_count", 0) + 1
+    state["bash_count"] = count
+    state.save()
+    if count > 100:
+        return deny(f"Rate limit: {count}/100 commands")
+```
+
+### Use Strategy When:
+
+- **Reusing a proven pattern** - don't reinvent complex logic
+- **Distributing hooks** - share via PyPI, configure via YAML
+- **Multiple strategies coexisting** - namespace isolation prevents state collisions
+- **Debugging complex behavior** - built-in observability
+
+```python
+# Strategy - packaged, configurable, reusable
 from fasthooks import HookApp
 from fasthooks.strategies import LongRunningStrategy
 
 app = HookApp()
 
-# Create strategy with configuration
 strategy = LongRunningStrategy(
     feature_list="features.json",
     enforce_commits=True,
 )
-
-# Include the strategy's hooks in your app
 app.include(strategy.get_blueprint())
 ```
 
-## Available Strategies
+---
 
-| Strategy | Purpose | Status |
-|----------|---------|--------|
-| [LongRunningStrategy](long-running.md) | Two-agent pattern for autonomous agents | Stable |
-| TokenBudgetStrategy | Track and warn on token usage | Planned |
-| CleanStateStrategy | Ensure clean state before stopping | Planned |
+## What Strategy Adds
 
-## Strategy vs Blueprint
+Raw fasthooks already provides state, multiple hooks, and complex logic. Strategy adds a **packaging layer**:
 
-| Aspect | Blueprint | Strategy |
-|--------|-----------|----------|
-| **Purpose** | Group related handlers | Reusable patterns with config |
-| **Configuration** | None | Accepts options |
-| **Observability** | Manual | Built-in event emission |
-| **Lifecycle** | Simple | Setup, teardown, state |
+| Feature | Raw Hooks | Strategy |
+|---------|-----------|----------|
+| State persistence | `state: State` DI | Same, plus auto-namespacing |
+| Multiple hooks | Register each manually | Bundle as single unit |
+| Configuration | Hardcoded or manual | Kwargs + YAML support |
+| Observability | Manual logging | Built-in events |
+| Distribution | Copy-paste code | PyPI packages |
+| Conflict detection | None | Meta.hooks declaration |
+| Testing | TestClient | StrategyTestClient with helpers |
+
+### State Namespace Isolation
+
+When multiple strategies run together, each gets isolated state:
+
+```python
+# Strategy A writes to state['strategy-a']['key']
+# Strategy B writes to state['strategy-b']['key']
+# No collision possible
+```
+
+With raw hooks, you'd manage this manually.
+
+---
+
+## When Strategy Truly Shines
+
+Consider `LongRunningStrategy` - Anthropic's two-agent pattern for autonomous agents:
+
+- **5 hooks coordinating**: session_start, stop, pre_compact, post_tool:Write, post_tool:Bash
+- **State tracked across hooks**: session count, files modified, commits made, progress updated
+- **Complex logic**: mode detection (initializer vs coding), feature list validation, git status checks
+- **Hard to get right**: timing, edge cases, state management
+
+You *could* build this with raw fasthooks. But you'd be reimplementing 500+ lines of tested logic.
+
+```python
+# Without Strategy - you write and maintain all this yourself
+@app.on_session_start()
+def handle_session_start(event, state: State):
+    # 50 lines of mode detection, context injection...
+
+@app.on_stop()
+def handle_stop(event, state: State):
+    # 40 lines of commit enforcement, progress checks...
+
+@app.on_pre_compact()
+def handle_pre_compact(event, state: State, transcript: Transcript):
+    # 20 lines of checkpoint warnings...
+
+@app.post_tool("Write")
+def track_write(event, state: State):
+    # 30 lines of file tracking, feature list validation...
+
+@app.post_tool("Bash")
+def track_bash(event, state: State):
+    # 15 lines of commit tracking...
+
+# Plus helper functions, error handling, edge cases...
+```
+
+```python
+# With Strategy - use proven implementation
+strategy = LongRunningStrategy(enforce_commits=True)
+app.include(strategy.get_blueprint())
+```
+
+**Strategy packages complex patterns so you don't reinvent them.**
+
+---
+
+## Built-in Strategies
+
+| Strategy | Purpose | Complexity |
+|----------|---------|------------|
+| [LongRunningStrategy](long-running.md) | Two-agent pattern for autonomous agents | High (5 hooks, state, modes) |
+| TokenBudgetStrategy | Warn on token usage thresholds | Low (1 hook) |
+| CleanStateStrategy | Enforce clean state before stopping | Low (1 hook) |
+
+### Simple Strategies: Educational Value
+
+`TokenBudgetStrategy` and `CleanStateStrategy` are simple enough to implement with raw hooks:
+
+```python
+# TokenBudgetStrategy as raw hooks (~10 lines)
+@app.post_tool()
+def check_tokens(event, transcript: Transcript):
+    total = transcript.stats.input_tokens + transcript.stats.output_tokens
+    if total >= 150_000:
+        return allow(message="⚠️ Token limit approaching!")
+```
+
+```python
+# CleanStateStrategy as raw hooks (~15 lines)
+@app.on_stop()
+def enforce_clean(event):
+    result = subprocess.run(["git", "status", "--porcelain"],
+                            capture_output=True, text=True, cwd=event.cwd)
+    if result.stdout.strip():
+        return block("Uncommitted changes exist")
+```
+
+We provide them as built-in strategies to:
+
+1. **Demonstrate the pattern** - see how Strategy wraps simple logic
+2. **Provide starting points** - extend them for your needs
+3. **Enable YAML configuration** - no code needed for simple setups
+4. **Show the spectrum** - from simple (1 hook) to complex (5 hooks)
+
+For simple cases, raw hooks are often cleaner. As complexity grows, Strategy pays off.
+
+---
+
+## Quick Comparison
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Your Decision Tree                                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Is this a one-off, project-specific hook?                   │
+│    YES → Use raw fasthooks                                   │
+│                                                              │
+│  Are you implementing a complex, multi-hook pattern?         │
+│    YES → Check if a Strategy exists first                    │
+│                                                              │
+│  Do you want to share/distribute this pattern?               │
+│    YES → Create a Strategy, publish to PyPI                  │
+│                                                              │
+│  Do you need observability/debugging?                        │
+│    YES → Strategy has it built-in                            │
+│                                                              │
+│  Are multiple patterns running together?                     │
+│    YES → Strategy namespacing prevents collisions            │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
 
 ## Creating a Strategy
 
@@ -70,9 +224,11 @@ class MyStrategy(Strategy):
         return bp
 ```
 
+---
+
 ## Observability
 
-All strategies have built-in observability:
+All strategies emit events automatically:
 
 ```python
 strategy = LongRunningStrategy()
@@ -91,7 +247,10 @@ Events emitted:
 - `error` - Handler throws exception
 - `custom` - Strategy-specific events
 
+---
+
 ## Further Reading
 
 - [Long-Running Strategy Guide](long-running.md)
 - [Live Example: Expense Tracker built with LongRunningStrategy](https://github.com/oneryalcin/fasthooks_example_longrun)
+- [Testing Strategies](../testing.md)

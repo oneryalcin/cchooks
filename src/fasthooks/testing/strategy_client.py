@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
+import inspect
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from fasthooks.depends import State
+from fasthooks.depends import State, Transcript
 from fasthooks.testing.mocks import MockEvent
 
 if TYPE_CHECKING:
@@ -44,6 +44,7 @@ class StrategyTestClient:
         *,
         project_dir: Path | str | None = None,
         session_id: str = "test-session",
+        mock_transcript: Any = None,
     ):
         """Initialize StrategyTestClient.
 
@@ -51,12 +52,14 @@ class StrategyTestClient:
             strategy: Strategy instance to test.
             project_dir: Project directory (uses tmp if None).
             session_id: Session ID for events.
+            mock_transcript: Optional mock Transcript for testing token-based strategies.
         """
         self.strategy = strategy
         self.project_dir = Path(project_dir) if project_dir else Path("/tmp/test-project")
         self.session_id = session_id
         self._events: list[ObservabilityEvent] = []
         self._state: State | None = None
+        self._transcript: Transcript | Any | None = mock_transcript
         self._git_initialized = False
 
         # Register event collector
@@ -77,6 +80,14 @@ class StrategyTestClient:
             state_dir.mkdir(parents=True, exist_ok=True)
             self._state = State.for_session(self.session_id, state_dir)
         return self._state
+
+    def set_transcript(self, transcript: Any) -> None:
+        """Set mock transcript for testing.
+
+        Args:
+            transcript: Mock Transcript object with stats attribute.
+        """
+        self._transcript = transcript
 
     # ═══════════════════════════════════════════════════════════════════════════
     # Project Setup
@@ -289,22 +300,48 @@ class StrategyTestClient:
             handlers = bp._lifecycle_handlers.get(lifecycle_key, [])
         elif hook_name.startswith("post_tool:"):
             tool = hook_name.split(":")[1]
+            # Also check catch-all handlers
             handlers = bp._post_tool_handlers.get(tool, [])
+            handlers = handlers + bp._post_tool_handlers.get("*", [])
         elif hook_name.startswith("pre_tool:"):
             tool = hook_name.split(":")[1]
             handlers = bp._pre_tool_handlers.get(tool, [])
+            handlers = handlers + bp._pre_tool_handlers.get("*", [])
         else:
             handlers = []
 
-        # Run handlers
+        # Run handlers with DI
         for handler, guard in handlers:
             if guard and not guard(event):
                 continue
-            result = handler(event, self.state)
+            result = self._call_with_di(handler, event)
             if result is not None:
                 return result
 
         return None
+
+    def _call_with_di(self, handler: Any, event: Any) -> Any:
+        """Call handler with dependency injection based on signature.
+
+        Args:
+            handler: Handler function.
+            event: Event object.
+
+        Returns:
+            Handler result.
+        """
+        sig = inspect.signature(handler)
+        kwargs: dict[str, Any] = {}
+
+        for name, param in sig.parameters.items():
+            if name == "event" or param.annotation is type(event):
+                continue  # First positional arg is event
+            if param.annotation is State or name == "state":
+                kwargs[name] = self.state
+            elif param.annotation is Transcript or name == "transcript":
+                kwargs[name] = self._transcript
+
+        return handler(event, **kwargs)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # Assertions
