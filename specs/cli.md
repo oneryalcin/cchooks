@@ -477,6 +477,32 @@ fasthooks status [--scope SCOPE]
 └─────────────────────────────────────────────────────────┘
 ```
 
+**Multi-scope warning:**
+
+When hooks are installed in multiple scopes, Claude Code runs ALL of them. The status command should warn about this:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  ⚠ Hooks active in MULTIPLE scopes (all will run)      │
+├─────────────────────────────────────────────────────────┤
+│  Project scope (.claude/settings.json)                  │
+│    ✓ Installed: .claude/hooks.py                        │
+│    ✓ Handlers: PreToolUse:Bash                          │
+│                                                         │
+│  User scope (~/.claude/settings.json)                   │
+│    ✓ Installed: ~/.claude/global-hooks.py               │
+│    ✓ Handlers: PreToolUse:*, Stop                       │
+│                                                         │
+│  Local scope (.claude/settings.local.json)              │
+│    ✗ Not installed                                      │
+├─────────────────────────────────────────────────────────┤
+│  Both project and user hooks will execute for each      │
+│  event. Ensure they don't conflict.                     │
+└─────────────────────────────────────────────────────────┘
+```
+
+This helps users understand that multiple hook sources run in parallel, which could cause unexpected behavior if they're not coordinated.
+
 **Validation errors:**
 ```
 Project scope (.claude/settings.json):
@@ -1227,6 +1253,47 @@ src/fasthooks/cli_utils/
 - `merge_hooks_config(existing: dict, new: dict, our_command: str) -> dict`
 - `remove_hooks_by_command(settings: dict, command: str) -> dict`
 
+**JSONC Support (Comments in JSON):**
+
+VS Code and many editors allow comments in settings.json (JSONC format). The standard `json` module will crash on these files. We must handle this gracefully.
+
+```toml
+# Add to pyproject.toml cli deps
+cli = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "json5>=0.9.0",  # Handles JSONC (comments, trailing commas)
+]
+```
+
+```python
+# settings.py
+import json5  # Handles comments and trailing commas
+
+def read_settings(path: Path) -> dict:
+    """Read settings.json, handling JSONC (comments)."""
+    if not path.exists():
+        return {}
+
+    text = path.read_text()
+    try:
+        return json5.loads(text)
+    except json5.JSON5DecodeError as e:
+        raise ValueError(f"Invalid JSON in {path}: {e}")
+
+def write_settings(path: Path, data: dict) -> None:
+    """Write settings.json (standard JSON, no comments)."""
+    # Note: We write standard JSON. Any comments in original file are lost.
+    # This is documented behavior - backup preserves the original.
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n")
+```
+
+**Note:** Writing removes comments from the original file. The backup preserves the original with comments. This is acceptable because:
+1. Backup always exists before modification
+2. We only modify the `hooks` section
+3. This is documented behavior
+
 **lock.py functions:**
 - `read_lock(path: Path) -> dict | None`
 - `write_lock(path: Path, data: dict) -> None`
@@ -1237,6 +1304,7 @@ src/fasthooks/cli_utils/
 - [ ] `make_relative_command()` generates correct uv command
 - [ ] `read_settings()` handles missing file (returns {})
 - [ ] `read_settings()` handles invalid JSON (raises)
+- [ ] `read_settings()` handles JSONC (comments, trailing commas)
 - [ ] `backup_settings()` creates .bak file
 - [ ] `merge_hooks_config()` preserves other hooks
 - [ ] `merge_hooks_config()` updates existing entries for same command
@@ -1293,19 +1361,123 @@ src/fasthooks/cli_utils/
 - `check_uv_installed() -> bool`
 - `validate_hooks_importable(path: Path) -> tuple[bool, str | None]`
 
+**Introspection Safety (Import Side Effects):**
+
+User's hooks.py may have side effects at module level (e.g., `db.connect()`, `print()`, network calls). We must isolate the import to avoid executing unintended code during `fasthooks install`.
+
+**Strategy: Subprocess Isolation**
+
+Run the introspection in a subprocess. This:
+1. Isolates side effects from the CLI process
+2. Catches crashes without killing the CLI
+3. Prevents pollution of the CLI's Python environment
+
+```python
+# validation.py
+import subprocess
+import sys
+import json
+
+def validate_and_introspect(path: Path) -> tuple[bool, list[str] | None, str | None]:
+    """
+    Validate hooks.py and extract handlers in isolated subprocess.
+
+    Returns:
+        (success, handlers, error_message)
+        - success: True if import succeeded and HookApp found
+        - handlers: List of hook identifiers like ["PreToolUse:Bash", "Stop"]
+        - error_message: Error description if failed
+    """
+    script = '''
+import sys
+import json
+sys.path.insert(0, str({path.parent!r}))
+
+try:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("hooks", {str(path)!r})
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    # Find HookApp
+    from fasthooks import HookApp
+    app = None
+    for name in ["app", "hooks", "hook_app", "application"]:
+        obj = getattr(module, name, None)
+        if isinstance(obj, HookApp):
+            app = obj
+            break
+    if app is None:
+        for name in dir(module):
+            obj = getattr(module, name)
+            if isinstance(obj, HookApp):
+                app = obj
+                break
+
+    if app is None:
+        print(json.dumps({{"error": "No HookApp instance found"}}))
+        sys.exit(1)
+
+    # Extract handlers (implementation details)
+    hooks = []
+    bp = app._blueprint
+    for tool in bp._pre_tool_handlers:
+        hooks.append(f"PreToolUse:{{tool}}")
+    for tool in bp._post_tool_handlers:
+        hooks.append(f"PostToolUse:{{tool}}")
+    for event in bp._lifecycle_handlers:
+        hooks.append(event)
+
+    print(json.dumps({{"hooks": hooks}}))
+
+except SyntaxError as e:
+    print(json.dumps({{"error": f"Syntax error: {{e}}"}}))
+    sys.exit(1)
+except ImportError as e:
+    print(json.dumps({{"error": f"Import error: {{e}}"}}))
+    sys.exit(1)
+except Exception as e:
+    print(json.dumps({{"error": f"{{type(e).__name__}}: {{e}}"}}))
+    sys.exit(1)
+'''
+
+    result = subprocess.run(
+        [sys.executable, "-c", script.format(path=path)],
+        capture_output=True,
+        text=True,
+        timeout=10,  # Prevent hangs
+    )
+
+    if result.returncode != 0:
+        try:
+            data = json.loads(result.stdout)
+            return (False, None, data.get("error", "Unknown error"))
+        except:
+            return (False, None, result.stderr or "Unknown error")
+
+    data = json.loads(result.stdout)
+    return (True, data["hooks"], None)
+```
+
+**Why subprocess over AST parsing:**
+- AST parsing can detect `HookApp` but can't extract registered handlers (decorators execute at import time)
+- Subprocess gives us full introspection while isolating side effects
+- 10-second timeout prevents infinite loops
+
 **Acceptance criteria:**
-- [ ] `load_hooks_module()` loads Python file as module
-- [ ] `find_hookapp()` finds `app` variable
-- [ ] `find_hookapp()` scans all attributes as fallback
-- [ ] `get_registered_hooks()` extracts pre_tool handlers
-- [ ] `get_registered_hooks()` extracts post_tool handlers
-- [ ] `get_registered_hooks()` extracts lifecycle handlers
+- [ ] `validate_and_introspect()` runs in subprocess (isolation)
+- [ ] `validate_and_introspect()` catches SyntaxError
+- [ ] `validate_and_introspect()` catches ImportError
+- [ ] `validate_and_introspect()` times out after 10s (no hangs)
+- [ ] `validate_and_introspect()` finds `app` variable
+- [ ] `validate_and_introspect()` scans all attributes as fallback
+- [ ] `validate_and_introspect()` extracts pre_tool handlers
+- [ ] `validate_and_introspect()` extracts post_tool handlers
+- [ ] `validate_and_introspect()` extracts lifecycle handlers
 - [ ] `generate_settings()` groups by event type
 - [ ] `generate_settings()` combines matchers with |
 - [ ] `generate_settings()` uses * for catch-all
 - [ ] `check_uv_installed()` returns bool
-- [ ] `validate_hooks_importable()` catches SyntaxError
-- [ ] `validate_hooks_importable()` catches ImportError
 
 **Tests:**
 ```python
@@ -1509,6 +1681,7 @@ src/fasthooks/cli/commands/
 - [ ] Reports import errors
 - [ ] Detects settings mismatch (handlers changed)
 - [ ] Suggests `--force` reinstall when out of sync
+- [ ] **Warns when multiple scopes have hooks installed** (all run in parallel)
 
 **Tests:**
 ```python
