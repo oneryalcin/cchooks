@@ -445,6 +445,126 @@ This is documented in a separate `specs/studio.md` (future).
 
 ---
 
+## Appendix: Observability System Comparison
+
+### Comparison Table
+
+| Aspect | Strategy (current) | HookApp (new spec) | LangChain | ell |
+|--------|-------------------|-------------------|-----------|-----|
+| **Registration** | `@strategy.on_observe` | `@app.on_observe` + `add_observer()` | `callbacks=[handler]` param | Implicit via `ell.init(store=)` |
+| **Observer type** | Callback function only | Callback + BaseObserver class | BaseCallbackHandler class | Store interface only |
+| **Event model** | Dict-like events | Pydantic ObservabilityEvent | Separate params per method | Internal models |
+| **Third-party extensibility** | Limited (callbacks only) | **Good** (class-based protocol) | **Excellent** (mature ecosystem) | **Poor** (store-only) |
+| **Event filtering** | None | `@app.on_observe("event_type")` | `ignore_*` properties | None |
+| **Context access** | None | ObserverContext object | run_id, parent_run_id, tags | Config singleton |
+| **Async support** | Sync only | Fire-and-forget | Both sync + async handlers | Sync (internal) |
+| **Built-in integrations** | File backend only | Stdout, File, Metrics, SQLite, Test | LangSmith, Datadog, Weights&Biases, etc. | SQLite/Postgres only |
+
+### Third-Party Integration Analysis
+
+#### LangChain (most extensible)
+
+```python
+# Third party creates handler class
+class DatadogCallbackHandler(BaseCallbackHandler):
+    def on_llm_start(self, serialized, prompts, *, run_id, **kwargs):
+        datadog.increment("llm.calls")
+
+    def on_llm_end(self, response, *, run_id, **kwargs):
+        datadog.timing("llm.duration", ...)
+
+# User registers
+chain.invoke(input, config={"callbacks": [DatadogCallbackHandler()]})
+```
+
+**Why it works**:
+- Clear protocol (BaseCallbackHandler)
+- Rich context (run_id, parent_run_id, tags, metadata)
+- Event-specific methods (`on_llm_start`, `on_chain_end`, etc.)
+- Mature ecosystem (dozens of integrations exist)
+
+#### ell (least extensible)
+
+```python
+# Only option: implement Store interface
+class MyStore(Store):
+    def write_lmp(self, lmp, uses_ids): ...
+    def write_invocation(self, invocation, consumes): ...
+    # 20+ methods required
+
+ell.init(store=MyStore())
+```
+
+**Limitation**: Must implement entire storage interface. No callback hooks for third-party integrations like Datadog - you'd need to fork ell.
+
+#### HookApp (new spec) - Good Balance
+
+```python
+# Third party creates observer
+class DatadogObserver(BaseObserver):
+    def on_handler_end(self, event: ObservabilityEvent, ctx: ObserverContext):
+        datadog.increment("fasthooks.handlers")
+        datadog.timing("fasthooks.handler_duration", event.duration_ms)
+
+# User registers
+app.add_observer(DatadogObserver())
+```
+
+**Why it will work**:
+- Clear protocol (BaseObserver with no-op defaults)
+- Rich context (ObserverContext with handler registry)
+- Event-specific methods (`on_hook_start`, `on_handler_end`, etc.)
+- Pydantic event model (easy to serialize/transform)
+
+### What We Get From LangChain Patterns
+
+| Pattern | Adopted? | Notes |
+|---------|----------|-------|
+| Base class with no-ops | ✓ | `BaseObserver` - override what you need |
+| Event filtering | ✓ | `@app.on_observe("handler_end")` |
+| Context propagation | ✓ | `ObserverContext` with session/handler info |
+| run_id correlation | ✓ | `hook_id` per invocation |
+| parent_run_id | Partial | Could add for nested scenarios |
+| tags/metadata inheritance | ✗ | Not needed for hooks (single invocation) |
+| 3-level registration | ✗ | App-level only (simpler) |
+| Async handler support | Partial | Fire-and-forget (observer handles async) |
+
+### Adding a Third-Party Observer (Example)
+
+```python
+# fasthooks-langsmith (hypothetical package)
+from fasthooks.observability import BaseObserver, ObservabilityEvent
+from langsmith import Client
+
+class LangSmithObserver(BaseObserver):
+    def __init__(self, project: str):
+        self.client = Client()
+        self.project = project
+
+    def on_hook_start(self, event, ctx):
+        self.client.create_run(
+            name=f"{event.hook_event_name}:{event.tool_name}",
+            run_type="chain",
+            project_name=self.project,
+            id=event.hook_id,
+        )
+
+    def on_hook_end(self, event, ctx):
+        self.client.update_run(
+            run_id=event.hook_id,
+            end_time=event.timestamp,
+            outputs={"decision": event.decision},
+        )
+
+# User
+from fasthooks_langsmith import LangSmithObserver
+app.add_observer(LangSmithObserver(project="my-hooks"))
+```
+
+**Verdict**: The new spec enables third-party integrations as easily as LangChain, without the complexity of ell's store-only approach.
+
+---
+
 ## References
 
 ### fasthooks Code
