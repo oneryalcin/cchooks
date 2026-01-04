@@ -235,6 +235,8 @@ class MyStrategy(Strategy):
 | `hooks` | Yes | List of hooks this strategy uses (for conflict detection) |
 | `description` | No | Human-readable description |
 | `fail_mode` | No | `"open"` (default) or `"closed"` - behavior on handler errors |
+| `custom_events` | No | List of custom event types this strategy emits |
+| `state_namespace` | No | Override state namespace (defaults to strategy name) |
 
 Hook format: `"on_stop"`, `"pre_tool:Bash"`, `"post_tool:*"` (catch-all).
 

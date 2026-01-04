@@ -521,10 +521,11 @@ strategy = LongRunningStrategy(
 
     # Enforcement (blocking behavior)
     enforce_commits=True,                # Block stop if uncommitted changes
+    warn_uncommitted=True,               # Warn (not block) if enforce_commits=False
     require_progress_update=True,        # Block stop if progress not updated
 
     # Paths to exclude from uncommitted changes check
-    exclude_paths=["hooks/", ".claude/"],
+    exclude_paths=["hooks/", ".claude/", ".fasthooks-state/"],
 )
 ```
 
@@ -537,8 +538,9 @@ strategy = LongRunningStrategy(
 | `init_script` | `str` | `"init.sh"` | Path to environment setup script |
 | `min_features` | `int` | `30` | Minimum features agent must create |
 | `enforce_commits` | `bool` | `True` | Block stop if uncommitted changes exist |
+| `warn_uncommitted` | `bool` | `True` | Warn on uncommitted (when enforce_commits=False) |
 | `require_progress_update` | `bool` | `True` | Block stop if progress file not updated |
-| `exclude_paths` | `list[str]` | `["hooks/", ".claude/"]` | Paths to exclude from uncommitted check |
+| `exclude_paths` | `list[str]` | `["hooks/", ".claude/", ...]` | Paths to exclude from uncommitted check |
 
 ---
 
@@ -864,8 +866,9 @@ class LongRunningStrategy(Strategy):
         init_script: str = "init.sh",
         min_features: int = 30,
         enforce_commits: bool = True,
+        warn_uncommitted: bool = True,
         require_progress_update: bool = True,
-        exclude_paths: list[str] | None = None,  # Default: ["hooks/", ".claude/"]
+        exclude_paths: list[str] | None = None,
     ): ...
 
     def get_blueprint(self) -> Blueprint:
