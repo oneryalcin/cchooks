@@ -7,8 +7,10 @@ from pathlib import Path
 
 from fasthooks.cli_utils import (
     backup_settings,
+    check_uv_installed,
     delete_lock,
     find_project_root,
+    generate_settings,
     get_lock_path,
     get_settings_path,
     make_relative_command,
@@ -16,6 +18,7 @@ from fasthooks.cli_utils import (
     read_lock,
     read_settings,
     remove_hooks_by_command,
+    validate_and_introspect,
     write_lock,
     write_settings,
 )
@@ -392,3 +395,163 @@ class TestLockFile:
         """delete_lock returns False for missing file."""
         result = delete_lock(tmp_path / ".fasthooks.lock")
         assert result is False
+
+
+class TestCheckUvInstalled:
+    """Tests for check_uv_installed."""
+
+    def test_returns_bool(self):
+        """check_uv_installed returns boolean."""
+        result = check_uv_installed()
+        assert isinstance(result, bool)
+
+
+class TestValidateAndIntrospect:
+    """Tests for validate_and_introspect."""
+
+    def test_file_not_found(self, tmp_path: Path):
+        """Returns error for missing file."""
+        success, hooks, error = validate_and_introspect(tmp_path / "missing.py")
+        assert success is False
+        assert hooks is None
+        assert "not found" in error.lower()
+
+    def test_syntax_error(self, tmp_path: Path):
+        """Returns error for syntax errors."""
+        bad_file = tmp_path / "bad.py"
+        bad_file.write_text("def broken(")
+        success, hooks, error = validate_and_introspect(bad_file)
+        assert success is False
+        assert hooks is None
+        assert "syntax" in error.lower()
+
+    def test_import_error(self, tmp_path: Path):
+        """Returns error for import errors."""
+        bad_file = tmp_path / "bad.py"
+        bad_file.write_text("import nonexistent_module_xyz_123")
+        success, hooks, error = validate_and_introspect(bad_file)
+        assert success is False
+        assert hooks is None
+        assert "import" in error.lower()
+
+    def test_no_hookapp(self, tmp_path: Path):
+        """Returns error when no HookApp found."""
+        no_app = tmp_path / "no_app.py"
+        no_app.write_text("x = 1")
+        success, hooks, error = validate_and_introspect(no_app)
+        assert success is False
+        assert hooks is None
+        assert "HookApp" in error
+
+    def test_no_handlers(self, tmp_path: Path):
+        """Returns error when HookApp has no handlers."""
+        empty_app = tmp_path / "empty.py"
+        empty_app.write_text("from fasthooks import HookApp\napp = HookApp()")
+        success, hooks, error = validate_and_introspect(empty_app)
+        assert success is False
+        assert hooks is None
+        assert "handler" in error.lower()
+
+    def test_valid_hooks_file(self, tmp_path: Path):
+        """Extracts handlers from valid hooks.py."""
+        hooks_file = tmp_path / "hooks.py"
+        hooks_file.write_text(
+            """
+from fasthooks import HookApp
+
+app = HookApp()
+
+@app.pre_tool("Bash")
+def check_bash(event):
+    pass
+
+@app.post_tool("*")
+def log_all(event):
+    pass
+
+@app.on_stop()
+def handle_stop(event):
+    pass
+"""
+        )
+        success, hooks, error = validate_and_introspect(hooks_file)
+        assert success is True
+        assert error is None
+        assert "PreToolUse:Bash" in hooks
+        assert "PostToolUse:*" in hooks
+        assert "Stop" in hooks
+
+    def test_custom_app_name(self, tmp_path: Path):
+        """Finds HookApp with custom variable name."""
+        hooks_file = tmp_path / "hooks.py"
+        hooks_file.write_text(
+            """
+from fasthooks import HookApp
+
+my_custom_app = HookApp()
+
+@my_custom_app.pre_tool("Bash")
+def check(event):
+    pass
+"""
+        )
+        success, hooks, error = validate_and_introspect(hooks_file)
+        assert success is True
+        assert "PreToolUse:Bash" in hooks
+
+
+class TestGenerateSettings:
+    """Tests for generate_settings."""
+
+    def test_single_tool(self):
+        """Generates settings for single tool."""
+        hooks = ["PreToolUse:Bash"]
+        result = generate_settings(hooks, "cmd")
+        assert "PreToolUse" in result["hooks"]
+        assert result["hooks"]["PreToolUse"][0]["matcher"] == "Bash"
+
+    def test_multiple_tools_same_event(self):
+        """Combines multiple tools with | separator."""
+        hooks = ["PreToolUse:Bash", "PreToolUse:Write", "PreToolUse:Edit"]
+        result = generate_settings(hooks, "cmd")
+        matcher = result["hooks"]["PreToolUse"][0]["matcher"]
+        assert "|" in matcher
+        assert "Bash" in matcher
+        assert "Edit" in matcher
+        assert "Write" in matcher
+
+    def test_catch_all(self):
+        """Uses * for catch-all matcher."""
+        hooks = ["PostToolUse:*"]
+        result = generate_settings(hooks, "cmd")
+        assert result["hooks"]["PostToolUse"][0]["matcher"] == "*"
+
+    def test_lifecycle_event(self):
+        """Lifecycle events have no matcher."""
+        hooks = ["Stop", "SessionStart"]
+        result = generate_settings(hooks, "cmd")
+        assert "matcher" not in result["hooks"]["Stop"][0]
+        assert "matcher" not in result["hooks"]["SessionStart"][0]
+
+    def test_mixed_events(self):
+        """Handles mixed tool and lifecycle events."""
+        hooks = ["PreToolUse:Bash", "PostToolUse:*", "Stop"]
+        result = generate_settings(hooks, "cmd")
+        assert "PreToolUse" in result["hooks"]
+        assert "PostToolUse" in result["hooks"]
+        assert "Stop" in result["hooks"]
+
+    def test_command_in_output(self):
+        """Command appears in generated config."""
+        hooks = ["Stop"]
+        result = generate_settings(hooks, "uv run hooks.py")
+        hook_entry = result["hooks"]["Stop"][0]["hooks"][0]
+        assert hook_entry["command"] == "uv run hooks.py"
+        assert hook_entry["type"] == "command"
+
+    def test_deterministic_matcher_order(self):
+        """Matchers are sorted for deterministic output."""
+        hooks = ["PreToolUse:Write", "PreToolUse:Bash", "PreToolUse:Edit"]
+        result = generate_settings(hooks, "cmd")
+        # Should be alphabetically sorted
+        assert result["hooks"]["PreToolUse"][0]["matcher"] == "Bash|Edit|Write"
