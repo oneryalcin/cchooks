@@ -1102,6 +1102,431 @@ if __name__ == "__main__":
 
 ---
 
+## Implementation Phases
+
+Implementation is split into phases that build on each other. Each phase is independently testable.
+
+```
+Phase 1: CLI Skeleton
+    ├── Phase 2: Init Command (standalone)
+    └── Phase 3: Core Utilities
+                    └── Phase 4: Introspection
+                                    └── Phase 5: Install Command
+                                                    └── Phase 6: Uninstall Command
+                                                                    └── Phase 7: Status Command
+```
+
+### Phase 1: CLI Skeleton
+
+**Goal:** Basic CLI infrastructure with stub commands.
+
+**Files to create:**
+```
+src/fasthooks/cli/
+├── __init__.py          # Exports main()
+└── app.py               # typer app with stub commands
+```
+
+**Changes to pyproject.toml:**
+```toml
+[project.optional-dependencies]
+cli = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+]
+
+[project.scripts]
+fasthooks = "fasthooks.cli:main"
+```
+
+**Acceptance criteria:**
+- [ ] `pip install -e ".[cli]"` installs CLI deps
+- [ ] `fasthooks --help` shows all commands
+- [ ] `fasthooks init` prints "Not implemented yet"
+- [ ] `fasthooks install foo` prints "Not implemented yet"
+- [ ] `fasthooks uninstall` prints "Not implemented yet"
+- [ ] `fasthooks status` prints "Not implemented yet"
+
+---
+
+### Phase 2: Init Command
+
+**Goal:** Generate hooks.py boilerplate file.
+
+**Files to create:**
+```
+src/fasthooks/cli/commands/
+├── __init__.py
+└── init.py              # init command implementation
+```
+
+**Implementation:**
+- Template string with PEP 723 header + HookApp boilerplate
+- Create parent directories if needed
+- Check for existing file, error unless --force
+- Write template to path
+
+**Acceptance criteria:**
+- [ ] `fasthooks init` creates `.claude/hooks.py`
+- [ ] Generated file has PEP 723 header
+- [ ] Generated file has working HookApp example
+- [ ] `fasthooks init` errors if file exists
+- [ ] `fasthooks init --force` overwrites existing file
+- [ ] `fasthooks init --path custom/hooks.py` uses custom path
+- [ ] Creates parent directories automatically
+
+**Tests:**
+```python
+def test_init_creates_hooks_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init"])
+    assert result.exit_code == 0
+    assert (tmp_path / ".claude" / "hooks.py").exists()
+
+def test_init_errors_if_exists(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "hooks.py").write_text("existing")
+    result = runner.invoke(app, ["init"])
+    assert result.exit_code == 1
+    assert "already exists" in result.output
+
+def test_init_force_overwrites(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "hooks.py").write_text("existing")
+    result = runner.invoke(app, ["init", "--force"])
+    assert result.exit_code == 0
+```
+
+---
+
+### Phase 3: Core Utilities
+
+**Goal:** Shared utilities for settings, locks, and paths.
+
+**Files to create:**
+```
+src/fasthooks/cli_utils/
+├── __init__.py
+├── paths.py             # Project root detection, path handling
+├── settings.py          # settings.json read/write/merge
+└── lock.py              # Lock file management
+```
+
+**paths.py functions:**
+- `find_project_root(start_path: Path) -> Path`
+- `make_relative_command(hooks_path: Path, project_root: Path) -> str`
+- `get_settings_path(scope: str, project_root: Path) -> Path`
+- `get_lock_path(scope: str, project_root: Path) -> Path`
+
+**settings.py functions:**
+- `read_settings(path: Path) -> dict`
+- `write_settings(path: Path, data: dict) -> None`
+- `backup_settings(path: Path) -> Path | None`
+- `merge_hooks_config(existing: dict, new: dict, our_command: str) -> dict`
+- `remove_hooks_by_command(settings: dict, command: str) -> dict`
+
+**lock.py functions:**
+- `read_lock(path: Path) -> dict | None`
+- `write_lock(path: Path, data: dict) -> None`
+- `delete_lock(path: Path) -> None`
+
+**Acceptance criteria:**
+- [ ] `find_project_root()` finds .claude/, .git/, pyproject.toml
+- [ ] `make_relative_command()` generates correct uv command
+- [ ] `read_settings()` handles missing file (returns {})
+- [ ] `read_settings()` handles invalid JSON (raises)
+- [ ] `backup_settings()` creates .bak file
+- [ ] `merge_hooks_config()` preserves other hooks
+- [ ] `merge_hooks_config()` updates existing entries for same command
+- [ ] Lock file round-trips correctly
+
+**Tests:**
+```python
+def test_find_project_root_finds_git(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "subdir").mkdir()
+    result = find_project_root(tmp_path / "subdir")
+    assert result == tmp_path
+
+def test_merge_preserves_other_hooks():
+    existing = {
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Bash", "hooks": [{"type": "command", "command": "other-script.py"}]}
+            ]
+        }
+    }
+    new = {
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Write", "hooks": [{"type": "command", "command": "our-hooks.py"}]}
+            ]
+        }
+    }
+    result = merge_hooks_config(existing, new, "our-hooks.py")
+    # Should have both entries
+    assert len(result["hooks"]["PreToolUse"]) == 2
+```
+
+---
+
+### Phase 4: Introspection
+
+**Goal:** Load hooks.py and extract registered handlers.
+
+**Files to create:**
+```
+src/fasthooks/cli_utils/
+├── introspect.py        # HookApp discovery and handler extraction
+└── validation.py        # Import validation, uv check
+```
+
+**introspect.py functions:**
+- `load_hooks_module(path: Path) -> ModuleType`
+- `find_hookapp(module: ModuleType) -> HookApp | None`
+- `get_registered_hooks(app: HookApp) -> list[str]`
+- `generate_settings(hooks: list[str], command: str) -> dict`
+
+**validation.py functions:**
+- `check_uv_installed() -> bool`
+- `validate_hooks_importable(path: Path) -> tuple[bool, str | None]`
+
+**Acceptance criteria:**
+- [ ] `load_hooks_module()` loads Python file as module
+- [ ] `find_hookapp()` finds `app` variable
+- [ ] `find_hookapp()` scans all attributes as fallback
+- [ ] `get_registered_hooks()` extracts pre_tool handlers
+- [ ] `get_registered_hooks()` extracts post_tool handlers
+- [ ] `get_registered_hooks()` extracts lifecycle handlers
+- [ ] `generate_settings()` groups by event type
+- [ ] `generate_settings()` combines matchers with |
+- [ ] `generate_settings()` uses * for catch-all
+- [ ] `check_uv_installed()` returns bool
+- [ ] `validate_hooks_importable()` catches SyntaxError
+- [ ] `validate_hooks_importable()` catches ImportError
+
+**Tests:**
+```python
+def test_get_registered_hooks(tmp_path):
+    hooks_py = tmp_path / "hooks.py"
+    hooks_py.write_text('''
+from fasthooks import HookApp
+app = HookApp()
+
+@app.pre_tool("Bash")
+def check_bash(event):
+    pass
+
+@app.post_tool("*")
+def log_all(event):
+    pass
+
+@app.on_stop()
+def handle_stop(event):
+    pass
+''')
+    module = load_hooks_module(hooks_py)
+    app = find_hookapp(module)
+    hooks = get_registered_hooks(app)
+
+    assert "PreToolUse:Bash" in hooks
+    assert "PostToolUse:*" in hooks
+    assert "Stop" in hooks
+
+def test_generate_settings_combines_matchers():
+    hooks = ["PreToolUse:Bash", "PreToolUse:Write", "PreToolUse:Edit"]
+    command = "uv run hooks.py"
+    result = generate_settings(hooks, command)
+
+    # Should combine with |
+    matcher = result["hooks"]["PreToolUse"][0]["matcher"]
+    assert "Bash" in matcher
+    assert "Edit" in matcher
+    assert "Write" in matcher
+    assert "|" in matcher
+```
+
+---
+
+### Phase 5: Install Command
+
+**Goal:** Full install workflow tying everything together.
+
+**Files to create:**
+```
+src/fasthooks/cli/commands/
+└── install.py           # install command implementation
+```
+
+**Implementation flow:**
+1. Validate path exists
+2. Check uv installed (warn if not)
+3. Validate hooks.py importable
+4. Load and introspect HookApp
+5. Check lock file (skip if exists, unless --force)
+6. Find project root
+7. Generate command string
+8. Generate settings config
+9. Backup existing settings
+10. Merge and write settings
+11. Write lock file
+12. Print success + restart reminder
+
+**Acceptance criteria:**
+- [ ] `fasthooks install .claude/hooks.py` works end-to-end
+- [ ] Creates/updates .claude/settings.json
+- [ ] Creates .claude/.fasthooks.lock
+- [ ] Creates .claude/settings.json.bak if settings existed
+- [ ] Warns if uv not installed
+- [ ] Errors if hooks.py not found
+- [ ] Errors if hooks.py has syntax error
+- [ ] Errors if no HookApp found
+- [ ] Errors if no handlers registered
+- [ ] Skips if already installed (shows message)
+- [ ] --force reinstalls even if locked
+- [ ] --scope user installs to ~/.claude/
+- [ ] --scope local installs to .claude/settings.local.json
+- [ ] Prints restart reminder
+
+**Tests:**
+```python
+def test_install_full_flow(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    # Create hooks.py
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    hooks_py = claude_dir / "hooks.py"
+    hooks_py.write_text('''
+from fasthooks import HookApp, deny
+app = HookApp()
+
+@app.pre_tool("Bash")
+def check(event):
+    pass
+
+if __name__ == "__main__":
+    app.run()
+''')
+
+    result = runner.invoke(app, ["install", ".claude/hooks.py"])
+    assert result.exit_code == 0
+
+    # Check settings.json
+    settings = claude_dir / "settings.json"
+    assert settings.exists()
+    data = json.loads(settings.read_text())
+    assert "PreToolUse" in data["hooks"]
+
+    # Check lock file
+    lock = claude_dir / ".fasthooks.lock"
+    assert lock.exists()
+
+    # Check restart reminder in output
+    assert "Restart" in result.output
+```
+
+---
+
+### Phase 6: Uninstall Command
+
+**Goal:** Remove hooks from settings.
+
+**Files to create:**
+```
+src/fasthooks/cli/commands/
+└── uninstall.py         # uninstall command implementation
+```
+
+**Implementation flow:**
+1. Find lock file for scope
+2. Error if not found
+3. Read lock to get command
+4. Backup settings
+5. Remove entries matching command
+6. Write settings
+7. Delete lock
+8. Print success + restart reminder
+
+**Acceptance criteria:**
+- [ ] `fasthooks uninstall` removes hooks
+- [ ] Removes entries from settings.json
+- [ ] Deletes lock file
+- [ ] Creates backup before modifying
+- [ ] Errors if not installed (no lock)
+- [ ] --scope user uninstalls from ~/.claude/
+- [ ] Preserves other hooks in settings.json
+- [ ] Prints restart reminder
+
+**Tests:**
+```python
+def test_uninstall_after_install(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    # ... setup and install first ...
+
+    result = runner.invoke(app, ["uninstall"])
+    assert result.exit_code == 0
+
+    # Lock should be gone
+    assert not (tmp_path / ".claude" / ".fasthooks.lock").exists()
+
+    # Settings should have no hooks (or no PreToolUse)
+    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    assert "hooks" not in settings or "PreToolUse" not in settings.get("hooks", {})
+```
+
+---
+
+### Phase 7: Status Command
+
+**Goal:** Show installation state and validate.
+
+**Files to create:**
+```
+src/fasthooks/cli/commands/
+└── status.py            # status command implementation
+```
+
+**Implementation flow:**
+1. For each scope (or specified scope):
+   - Check lock file exists
+   - If installed:
+     - Load lock data
+     - Try to import hooks.py
+     - Extract current handlers
+     - Compare with lock
+     - Check settings.json has expected entries
+   - Report status with Rich table/panel
+
+**Acceptance criteria:**
+- [ ] Shows all scopes when no --scope given
+- [ ] Shows single scope with --scope
+- [ ] Shows "Not installed" for scopes without lock
+- [ ] Shows path and install time for installed scopes
+- [ ] Validates hooks.py is still importable
+- [ ] Reports import errors
+- [ ] Detects settings mismatch (handlers changed)
+- [ ] Suggests `--force` reinstall when out of sync
+
+**Tests:**
+```python
+def test_status_shows_installed(tmp_path, monkeypatch):
+    # Install first, then check status
+    ...
+    result = runner.invoke(app, ["status"])
+    assert "Installed" in result.output
+    assert ".claude/hooks.py" in result.output
+
+def test_status_shows_not_installed(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["status"])
+    assert "Not installed" in result.output
+```
+
+---
+
 ## References
 
 - **Claude Code Hooks Documentation:** See `/private/tmp/strategy-test/hooks.md` and `/private/tmp/strategy-test/hooks-guide.md` for complete Claude Code hooks reference
