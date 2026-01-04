@@ -394,6 +394,211 @@ def log_all(event):
 
 ---
 
+## Reference: ell-studio (Visual Tracing)
+
+ell is an LLM programming framework with a visual studio for tracing. Highly relevant for building a hooks studio.
+
+**Clone**: `gh repo clone MadcowD/ell /tmp/ell -- --depth 1`
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│               User Code (@ell.simple decorated)          │
+└──────────────────────┬──────────────────────────────────┘
+                       │ (function calls)
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│          _track() decorator wrapper                      │
+│  - Captures: timing, tokens, params, results            │
+│  - Thread-local stack for parent/child tracking         │
+└──────────────┬────────────────────────────┬─────────────┘
+               │                            │
+               ▼                            ▼
+┌──────────────────────┐    ┌────────────────────────────┐
+│ Invocation nesting   │    │ Storage Layer              │
+│ (thread-local stack) │    │ - SQLite + gzip blobs      │
+└──────────────────────┘    │ - Postgres for production  │
+                            └────────────────────────────┘
+                                       │
+                                       ▼
+                        ┌──────────────────────────┐
+                        │   ell-studio Backend     │
+                        │ FastAPI + WebSocket      │
+                        └──────────────────────────┘
+                                       │
+                                       ▼
+                        ┌──────────────────────────┐
+                        │   ell-studio Frontend    │
+                        │ React + ReactFlow + D3   │
+                        └──────────────────────────┘
+```
+
+### Key Backend Patterns
+
+#### 1. Decorator-Based Instrumentation
+```python
+# /tmp/ell/src/ell/lmp/_track.py:47-197
+# Wrap function, capture before/after execution
+_start_time = utc_now()
+(result, invocation_api_params, metadata) = func_to_track(*args, **kwargs)
+latency_ms = (utc_now() - _start_time).total_seconds() * 1000
+```
+
+#### 2. Thread-Local Context Stack
+```python
+# /tmp/ell/src/ell/lmp/_track.py:26-44
+_invocation_stack = threading.local()
+
+def get_current_invocation() -> Optional[str]:
+    return _invocation_stack.stack[-1] if _invocation_stack.stack else None
+
+def push_invocation(invocation_id: str):
+    _invocation_stack.stack.append(invocation_id)
+```
+
+#### 3. Two-Phase Storage (Dedup + Every Call)
+```python
+# Phase 1: Store LMP definition once (deduplicated by hash)
+# /tmp/ell/src/ell/lmp/_track.py:201-257
+serialized_lmp = SerializedLMP(
+    lmp_id=func.__ell_hash__,  # Content-based hash
+    name=func.__qualname__,
+    source=fn_closure[0],
+    version_number=len(existing) + 1,
+)
+
+# Phase 2: Store every invocation
+# /tmp/ell/src/ell/lmp/_track.py:260-310
+_write_invocation(
+    func, invocation_id, latency_ms, prompt_tokens, completion_tokens,
+    state_cache_key, invocation_api_params, cleaned_invocation_params,
+    consumes, result, parent_invocation_id,
+)
+```
+
+#### 4. Large Payload Externalization
+```python
+# /tmp/ell/src/ell/stores/sql.py:469-510
+# Payloads >100KB externalized to blob store (gzip compressed)
+if size > 100_000:
+    contents.is_external = True
+    blob_store.write(invocation_id, gzip.compress(data))
+```
+
+### Data Models
+
+**File**: `/tmp/ell/src/ell/stores/models/core.py:26-210`
+
+| Model | Purpose | Key Fields |
+|-------|---------|------------|
+| `SerializedLMP` | LMP definition (versioned) | `lmp_id`, `name`, `source`, `version_number` |
+| `Invocation` | Single execution | `id`, `lmp_id`, `latency_ms`, `prompt_tokens`, `used_by_id` |
+| `InvocationContents` | Params/results | `params`, `results`, `is_external` |
+| `InvocationTrace` | Many-to-many dependency | `consumer_id`, `consumed_id` |
+
+### Real-Time Updates
+
+```python
+# /tmp/ell/src/ell/studio/__main__.py:70-104
+# File watcher detects DB changes
+observer = Observer()
+observer.schedule(DatabaseChangeHandler(), db_path)
+
+# /tmp/ell/src/ell/studio/connection_manager.py:1-18
+# WebSocket broadcasts to all clients
+async def broadcast(message: str):
+    for connection in self.active_connections:
+        await connection.send_text(message)
+```
+
+### Studio Server Endpoints
+
+**File**: `/tmp/ell/src/ell/studio/server.py`
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/latest/lmps` | Latest version of each LMP |
+| `GET /api/invocations` | Query invocations (hierarchical) |
+| `GET /api/traces` | Dependency graph edges |
+| `GET /api/invocations/aggregate` | Time-series stats |
+| `GET /api/blob/{id}` | Externalized large payloads |
+
+### Frontend Visualization
+
+**Technology Stack**:
+- React 18 + React Router
+- React Query (caching + auto-invalidation)
+- ReactFlow + D3 (dependency graph)
+- Tailwind CSS (dark mode first)
+- react-syntax-highlighter (code display)
+
+#### Key Visualization Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Dependency Graph | `/tmp/ell/ell-studio/src/components/depgraph/DependencyGraph.js` | ReactFlow + D3 force layout |
+| Layout Algorithm | `/tmp/ell/ell-studio/src/components/depgraph/layoutUtils.js:129-269` | Hierarchical positioning |
+| Invocation Tree | `/tmp/ell/ell-studio/src/components/HierarchicalTable.js:8-250` | SVG connectors + expand/collapse |
+| Code Highlighting | `/tmp/ell/ell-studio/src/components/source/CodeHighlighter.js` | Prism + diff view |
+| JSON Renderer | `/tmp/ell/ell-studio/src/components/IORenderer.js:54-292` | Type-aware pretty-printing |
+| Metrics Display | `/tmp/ell/ell-studio/src/components/evaluations/MetricDisplay.js` | Animated KPI cards |
+
+#### WebSocket Auto-Refresh
+
+```javascript
+// /tmp/ell/ell-studio/src/hooks/useBackend.js:22-59
+socket.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  if (data.entity === "database_updated") {
+    queryClient.invalidateQueries({ queryKey: ["traces"] });
+    queryClient.invalidateQueries({ queryKey: ["invocations"] });
+    // ... invalidate all caches
+  }
+};
+```
+
+### Lessons for fasthooks-studio
+
+| Pattern | ell Implementation | fasthooks Adaptation |
+|---------|-------------------|---------------------|
+| **Instrumentation** | Decorators wrap functions | Already have `@app.pre_tool()` |
+| **Context tracking** | Thread-local stack | Track handler chains within hook |
+| **Deduplication** | Hash-based LMP IDs | Hash handler definitions |
+| **Invocations** | Store every call | Store every hook execution |
+| **Large payloads** | Externalize >100KB | Externalize transcript content |
+| **Real-time** | File watcher + WebSocket | Same pattern |
+| **Storage** | SQLite (dev) / Postgres (prod) | Same |
+| **Graph viz** | ReactFlow + D3 | Same for handler dependency |
+| **Tree view** | Custom SVG connectors | For nested handler calls |
+
+### ell Key Files Reference
+
+**Backend (Python)**:
+| File | Lines | Purpose |
+|------|-------|---------|
+| `src/ell/lmp/_track.py` | 47-197 | Main tracking decorator |
+| `src/ell/lmp/_track.py` | 260-310 | Invocation persistence |
+| `src/ell/stores/sql.py` | 35-510 | SQLite/Postgres storage |
+| `src/ell/stores/models/core.py` | 26-210 | Data models |
+| `src/ell/studio/server.py` | 36-349 | FastAPI endpoints |
+| `src/ell/configurator.py` | 35-243 | Global config singleton |
+
+**Frontend (React)**:
+| File | Lines | Purpose |
+|------|-------|---------|
+| `ell-studio/src/App.js` | 44-109 | Main routing |
+| `ell-studio/src/hooks/useBackend.js` | 1-348 | All API queries |
+| `ell-studio/src/components/depgraph/DependencyGraph.js` | 31-140 | Graph visualization |
+| `ell-studio/src/components/depgraph/layoutUtils.js` | 20-269 | D3 force + layout |
+| `ell-studio/src/components/HierarchicalTable.js` | 8-250 | Tree table + SVG |
+| `ell-studio/src/components/source/CodeHighlighter.js` | 1-89 | Syntax highlighting |
+| `ell-studio/src/components/IORenderer.js` | 1-318 | JSON rendering |
+| `ell-studio/tailwind.config.js` | 1-73 | Theme + colors |
+| `ell-studio/src/styles/globals.css` | 5-107 | CSS vars + animations |
+
+---
+
 ## Appendix: Event Flow Diagram
 
 ```
