@@ -358,6 +358,31 @@ fasthooks uninstall --scope local
 
 ---
 
+## Roadmap
+
+Future CLI commands planned for v2:
+
+| Command | Description |
+|---------|-------------|
+| `fasthooks show-config` | Output settings.json snippet without writing (for CI/CD, debugging) |
+| `fasthooks test` | Run hooks locally with mock events (quick smoke tests) |
+
+**show-config** - Preview what `install` would write:
+```bash
+fasthooks show-config .claude/hooks.py
+# Outputs JSON to stdout, doesn't modify any files
+```
+
+**test** - Test handlers without Claude Code:
+```bash
+fasthooks test .claude/hooks.py --event PreToolUse:Bash --input '{"command": "rm -rf /"}'
+# Output: {"decision": "deny", "reason": "Dangerous command blocked"}
+```
+
+Have a feature request? [Open an issue](https://github.com/oneryalcin/fasthooks/issues).
+
+---
+
 ## Help
 
 ```bash
