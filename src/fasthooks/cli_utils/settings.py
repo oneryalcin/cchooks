@@ -73,10 +73,9 @@ def merge_hooks_config(
     Merge new hooks into existing settings.
 
     Strategy:
-    1. For each event type in new config:
-       - Remove any existing entries with our_command (updating)
-       - Add our new entries
-    2. Preserve entries from other sources (different commands)
+    1. First remove ALL entries with our_command from ALL event types
+    2. Then add our new entries
+    3. Preserve entries from other sources (different commands)
 
     Args:
         existing: Current settings.json content
@@ -90,23 +89,23 @@ def merge_hooks_config(
     if "hooks" not in result:
         result["hooks"] = {}
 
-    for event_type, new_entries in new.get("hooks", {}).items():
-        if event_type not in result["hooks"]:
-            result["hooks"][event_type] = []
-
-        # Remove our old entries (if reinstalling)
+    # Step 1: Remove ALL our old entries from ALL event types
+    # This handles the case where we previously had handlers we no longer have
+    for event_type in list(result["hooks"].keys()):
         result["hooks"][event_type] = [
             entry
             for entry in result["hooks"][event_type]
             if not any(hook.get("command") == our_command for hook in entry.get("hooks", []))
         ]
-
-        # Add new entries
-        result["hooks"][event_type].extend(new_entries)
-
         # Clean up empty lists
         if not result["hooks"][event_type]:
             del result["hooks"][event_type]
+
+    # Step 2: Add new entries
+    for event_type, new_entries in new.get("hooks", {}).items():
+        if event_type not in result["hooks"]:
+            result["hooks"][event_type] = []
+        result["hooks"][event_type].extend(new_entries)
 
     # Clean up empty hooks dict
     if not result.get("hooks"):
@@ -139,11 +138,15 @@ def remove_hooks_by_command(
         kept = []
         for entry in entries:
             hooks = entry.get("hooks", [])
-            matching = [h for h in hooks if h.get("command") == command]
-            if matching:
-                removed += len(matching)
-            else:
-                kept.append(entry)
+            # Filter out hooks matching our command, keep the rest
+            remaining = [h for h in hooks if h.get("command") != command]
+            removed += len(hooks) - len(remaining)
+
+            if remaining:
+                # Keep entry with remaining hooks
+                new_entry = entry.copy()
+                new_entry["hooks"] = remaining
+                kept.append(new_entry)
         if kept:
             result["hooks"][event_type] = kept
 

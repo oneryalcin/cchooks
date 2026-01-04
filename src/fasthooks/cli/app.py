@@ -99,8 +99,9 @@ def install(
     ] = False,
 ) -> None:
     """Register hooks with Claude Code."""
-    console.print("[yellow]Not implemented yet[/yellow]")
-    raise typer.Exit(code=0)
+    from fasthooks.cli.commands.install import run_install
+
+    raise typer.Exit(code=run_install(path, scope, force, console))
 
 
 @app.command()
@@ -115,8 +116,9 @@ def uninstall(
     ] = "project",
 ) -> None:
     """Remove hooks from Claude Code."""
-    console.print("[yellow]Not implemented yet[/yellow]")
-    raise typer.Exit(code=0)
+    from fasthooks.cli.commands.uninstall import run_uninstall
+
+    raise typer.Exit(code=run_uninstall(scope, console))
 
 
 @app.command()
@@ -131,5 +133,6 @@ def status(
     ] = None,
 ) -> None:
     """Show installation state and validate."""
-    console.print("[yellow]Not implemented yet[/yellow]")
-    raise typer.Exit(code=0)
+    from fasthooks.cli.commands.status import run_status
+
+    raise typer.Exit(code=run_status(scope, console))

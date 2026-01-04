@@ -309,6 +309,51 @@ class TestMergeHooksConfig:
         # Stop should have both entries
         assert len(result["hooks"]["Stop"]) == 2
 
+    def test_removes_old_event_types_on_reinstall(self):
+        """Removes event types we no longer have on reinstall (--force)."""
+        # Previously had PreToolUse:Bash AND Stop
+        existing = {
+            "hooks": {
+                "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "our.py"}]}],
+                "Stop": [{"hooks": [{"command": "our.py"}]}],
+            }
+        }
+        # Now only have PreToolUse:Bash (removed Stop handler)
+        new = {
+            "hooks": {
+                "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "our.py"}]}],
+            }
+        }
+        result = merge_hooks_config(existing, new, "our.py")
+        # PreToolUse should still exist
+        assert "PreToolUse" in result["hooks"]
+        # Stop should be GONE (we no longer have that handler)
+        assert "Stop" not in result["hooks"]
+
+    def test_preserves_other_command_when_removing_old_event_types(self):
+        """Preserves other commands when removing our old event types."""
+        # Both us and other.py have Stop
+        existing = {
+            "hooks": {
+                "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "our.py"}]}],
+                "Stop": [
+                    {"hooks": [{"command": "our.py"}]},
+                    {"hooks": [{"command": "other.py"}]},
+                ],
+            }
+        }
+        # We remove our Stop handler
+        new = {
+            "hooks": {
+                "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "our.py"}]}],
+            }
+        }
+        result = merge_hooks_config(existing, new, "our.py")
+        # Stop should still exist with other.py's entry
+        assert "Stop" in result["hooks"]
+        assert len(result["hooks"]["Stop"]) == 1
+        assert result["hooks"]["Stop"][0]["hooks"][0]["command"] == "other.py"
+
 
 class TestRemoveHooksByCommand:
     """Tests for remove_hooks_by_command."""
@@ -352,6 +397,29 @@ class TestRemoveHooksByCommand:
         result, count = remove_hooks_by_command({}, "our.py")
         assert count == 0
         assert result == {}
+
+    def test_preserves_other_hooks_in_shared_entry(self):
+        """Preserves other hooks when multiple hooks share same entry."""
+        settings = {
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [
+                            {"type": "command", "command": "our.py"},
+                            {"type": "command", "command": "other.py"},
+                        ],
+                    }
+                ]
+            }
+        }
+        result, count = remove_hooks_by_command(settings, "our.py")
+        assert count == 1
+        # Other hook should be preserved
+        assert "PreToolUse" in result["hooks"]
+        assert len(result["hooks"]["PreToolUse"]) == 1
+        assert len(result["hooks"]["PreToolUse"][0]["hooks"]) == 1
+        assert result["hooks"]["PreToolUse"][0]["hooks"][0]["command"] == "other.py"
 
 
 class TestLockFile:
@@ -523,6 +591,47 @@ def check(event):
         assert success is True
         assert "PreToolUse:Bash" in hooks
 
+    def test_notification_handlers_with_matcher(self, tmp_path: Path):
+        """Extracts Notification handlers with matchers."""
+        hooks_file = tmp_path / "hooks.py"
+        hooks_file.write_text(
+            """
+from fasthooks import HookApp
+
+app = HookApp()
+
+@app.on_notification("build")
+def handle_build(event):
+    pass
+
+@app.on_notification("test")
+def handle_test(event):
+    pass
+"""
+        )
+        success, hooks, error = validate_and_introspect(hooks_file)
+        assert success is True
+        assert "Notification:build" in hooks
+        assert "Notification:test" in hooks
+
+    def test_notification_catch_all(self, tmp_path: Path):
+        """Extracts Notification catch-all handler."""
+        hooks_file = tmp_path / "hooks.py"
+        hooks_file.write_text(
+            """
+from fasthooks import HookApp
+
+app = HookApp()
+
+@app.on_notification("*")
+def handle_all(event):
+    pass
+"""
+        )
+        success, hooks, error = validate_and_introspect(hooks_file)
+        assert success is True
+        assert "Notification:*" in hooks
+
 
 class TestGenerateSettings:
     """Tests for generate_settings."""
@@ -579,3 +688,18 @@ class TestGenerateSettings:
         result = generate_settings(hooks, "cmd")
         # Should be alphabetically sorted
         assert result["hooks"]["PreToolUse"][0]["matcher"] == "Bash|Edit|Write"
+
+    def test_notification_with_matchers(self):
+        """Notification events have matchers like tool events."""
+        hooks = ["Notification:build", "Notification:test"]
+        result = generate_settings(hooks, "cmd")
+        assert "Notification" in result["hooks"]
+        matcher = result["hooks"]["Notification"][0]["matcher"]
+        assert "build" in matcher
+        assert "test" in matcher
+
+    def test_notification_catch_all(self):
+        """Notification catch-all uses * matcher."""
+        hooks = ["Notification:*"]
+        result = generate_settings(hooks, "cmd")
+        assert result["hooks"]["Notification"][0]["matcher"] == "*"

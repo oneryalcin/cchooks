@@ -1475,6 +1475,7 @@ except Exception as e:
 - [ ] `validate_and_introspect()` extracts post_tool handlers
 - [ ] `validate_and_introspect()` extracts lifecycle handlers
 - [ ] `validate_and_introspect()` extracts permission handlers
+- [ ] `validate_and_introspect()` extracts Notification handlers with matchers
 - [ ] `validate_and_introspect()` supports local imports (sys.path injection)
 - [ ] `generate_settings()` groups by event type
 - [ ] `generate_settings()` combines matchers with |

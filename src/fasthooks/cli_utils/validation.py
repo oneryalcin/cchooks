@@ -53,8 +53,17 @@ try:
         hooks.append(f"PostToolUse:{tool}")
     for tool in app._permission_handlers:
         hooks.append(f"PermissionRequest:{tool}")
-    for event in app._lifecycle_handlers:
-        hooks.append(event)
+    for event, handlers_list in app._lifecycle_handlers.items():
+        if event == "Notification":
+            # Notification has matchers like tool events
+            for _, matcher in handlers_list:
+                if matcher and matcher != "*":
+                    hooks.append(f"Notification:{matcher}")
+                else:
+                    hooks.append("Notification:*")
+        else:
+            # Other lifecycle events don't have matchers
+            hooks.append(event)
 
     if not hooks:
         print(json.dumps({"error": "No handlers registered"}))
