@@ -208,9 +208,11 @@ class MyStrategy(Strategy):
         description = "Does something useful"
         hooks = ["pre_tool:Bash"]
 
-    def __init__(self, *, blocked_commands: list[str] = None, **config):
-        super().__init__(**config)
+    def __init__(self, *, blocked_commands: list[str] | None = None):
+        # IMPORTANT: Set attributes BEFORE super().__init__()
+        # super().__init__() calls _validate_config() which may need these
         self.blocked_commands = blocked_commands or ["rm -rf"]
+        super().__init__()
 
     def _build_blueprint(self) -> Blueprint:
         bp = Blueprint("my-strategy")
@@ -222,6 +224,87 @@ class MyStrategy(Strategy):
                     return deny(f"Blocked: {cmd}")
 
         return bp
+```
+
+### Meta Class Options
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Unique identifier (used for state namespace, conflict detection) |
+| `version` | Yes | Semantic version string |
+| `hooks` | Yes | List of hooks this strategy uses (for conflict detection) |
+| `description` | No | Human-readable description |
+| `fail_mode` | No | `"open"` (default) or `"closed"` - behavior on handler errors |
+
+Hook format: `"on_stop"`, `"pre_tool:Bash"`, `"post_tool:*"` (catch-all).
+
+### Validation
+
+Override `_validate_config()` for custom validation:
+
+```python
+def _validate_config(self) -> None:
+    if self.max_retries < 0:
+        raise ValueError("max_retries must be non-negative")
+```
+
+Called automatically by `super().__init__()`.
+
+### Using Dependencies
+
+Handlers can use DI just like raw hooks:
+
+```python
+from fasthooks.depends import State, Transcript
+
+def _build_blueprint(self) -> Blueprint:
+    bp = Blueprint("my-strategy")
+
+    @bp.post_tool()
+    def track_usage(event, state: State, transcript: Transcript):
+        # State is auto-namespaced to strategy name
+        state["call_count"] = state.get("call_count", 0) + 1
+        state.save()
+
+        # Transcript provides token stats
+        if transcript.stats.total_tokens > 100_000:
+            return allow(message="Token warning!")
+
+    return bp
+```
+
+### Testing
+
+Use `StrategyTestClient`:
+
+```python
+from fasthooks.testing import StrategyTestClient, MockEvent
+
+def test_blocks_dangerous_command():
+    strategy = MyStrategy(blocked_commands=["rm -rf"])
+    client = StrategyTestClient(strategy)
+
+    response = client.call_pre_tool(
+        MockEvent.bash(command="rm -rf /")
+    )
+
+    assert response is not None
+    assert response.decision == "deny"
+```
+
+For strategies using `Transcript`:
+
+```python
+def test_with_transcript():
+    client = StrategyTestClient(strategy)
+
+    # Mock transcript
+    mock_transcript = Mock()
+    mock_transcript.stats.total_tokens = 150_000
+    client.set_transcript(mock_transcript)
+
+    response = client.call_post_tool(MockEvent.bash())
+    # ...
 ```
 
 ---
