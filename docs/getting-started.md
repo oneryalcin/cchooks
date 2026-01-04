@@ -4,118 +4,176 @@ Get your first Claude Code hook running in 5 minutes.
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.10+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 - Claude Code CLI
 
-## Create a Hook Project
+## Step 1: Install fasthooks
+
+=== "uv"
+
+    ```bash
+    uv add fasthooks
+    ```
+
+=== "pip"
+
+    ```bash
+    pip install fasthooks
+    ```
+
+## Step 2: Create a hooks file
 
 ```bash
-fasthooks init my-hooks
-cd my-hooks
+fasthooks init
 ```
 
-This creates:
-
-```
-my-hooks/
-├── hooks.py              # Your hook handlers
-├── pyproject.toml        # Project dependencies
-└── .claude/
-    └── settings.json     # Claude Code configuration
-```
-
-## Your First Hook
-
-Edit `hooks.py`:
+This creates `.claude/hooks.py` with example code:
 
 ```python
 # /// script
-# dependencies = ["fasthooks"]
+# requires-python = ">=3.10"
+# dependencies = []
 # ///
-from fasthooks import HookApp, allow, deny
+from fasthooks import HookApp, deny
 
 app = HookApp()
+
 
 @app.pre_tool("Bash")
 def check_bash(event):
     """Block dangerous bash commands."""
-    if "rm -rf" in event.command:
-        return deny("Dangerous command blocked")
-    return allow()
+    if "rm -rf /" in event.command:
+        return deny("Blocked dangerous command")
+
 
 if __name__ == "__main__":
     app.run()
 ```
 
-## Test Locally
+## Step 3: Customize your hooks
 
-Generate a sample event and test your hook:
+Edit `.claude/hooks.py` with your own handlers:
+
+```python
+from fasthooks import HookApp, deny
+
+app = HookApp()
+
+
+@app.pre_tool("Bash")
+def check_bash(event):
+    """Block dangerous bash commands."""
+    dangerous = ["rm -rf", "mkfs", "> /dev/"]
+    if any(d in event.command for d in dangerous):
+        return deny(f"Blocked dangerous command")
+
+
+@app.pre_tool("Write")
+def check_write(event):
+    """Protect sensitive files."""
+    protected = [".env", "credentials", "secrets"]
+    if any(p in event.file_path for p in protected):
+        return deny(f"Cannot modify {event.file_path}")
+
+
+@app.on_stop()
+def on_stop(event):
+    """Called when Claude finishes."""
+    pass  # Add logging, cleanup, etc.
+
+
+if __name__ == "__main__":
+    app.run()
+```
+
+## Step 4: Install to Claude Code
 
 ```bash
-# Generate a dangerous bash event
-fasthooks example bash_dangerous > event.json
-
-# Run your hook
-fasthooks run hooks.py --input event.json
+fasthooks install .claude/hooks.py
 ```
 
 Output:
-```json
-{"decision": "deny", "reason": "Dangerous command blocked"}
+```
+✓ Validated .claude/hooks.py
+✓ Found 3 handlers:
+    PreToolUse:Bash
+    PreToolUse:Write
+    Stop
+✓ Updated .claude/settings.json
+✓ Created .claude/.fasthooks.lock
+
+┌──────────────────────────────────────────────────────────────┐
+│ Restart Claude Code to activate hooks.                       │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-Try with a safe command:
+## Step 5: Restart Claude Code
+
+**Important:** Claude Code doesn't hot-reload hooks. You must restart it:
 
 ```bash
-fasthooks example bash > safe.json
-fasthooks run hooks.py --input safe.json
+# Exit Claude Code (Ctrl+C or type /exit)
+# Then restart
+claude
 ```
 
-No output means the command is allowed.
+Your hooks are now active!
 
-## Configure Claude Code
+## Verify it's working
 
-Copy the generated settings to your project:
+Run `fasthooks status` to check:
+
+```
+╭──────────────────────────────── Hook Status ─────────────────────────────────╮
+│ Project scope (.claude/settings.json)                                        │
+│   ✓ Installed: .claude/hooks.py                                              │
+│   ✓ Handlers: PreToolUse:Bash, PreToolUse:Write, Stop                        │
+│   ✓ Hooks valid                                                              │
+│   ✓ Settings in sync                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+## How it works
+
+```
+Claude Code → spawns hook → stdin (JSON event) → fasthooks → your handler → response → stdout → Claude Code
+```
+
+1. Claude Code triggers an event (e.g., about to run a bash command)
+2. It spawns your hooks.py as a subprocess
+3. Sends a JSON event to stdin
+4. fasthooks routes to your handler based on `@app.pre_tool("Bash")`
+5. Your handler returns `deny(reason)` or `None` (allow)
+6. fasthooks sends the response to stdout
+7. Claude Code applies the decision
+
+## Updating hooks
+
+When you modify `.claude/hooks.py`:
 
 ```bash
-cp .claude/settings.json /path/to/your/project/.claude/
+# Reinstall to pick up new handlers
+fasthooks install .claude/hooks.py --force
+
+# Restart Claude Code
 ```
 
-Or add to your global Claude Code settings (`~/.claude/settings.json`):
+## Team setup
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv run /path/to/my-hooks/hooks.py"
-          }
-        ]
-      }
-    ]
-  }
-}
+For team projects, commit your hooks to git:
+
+```bash
+git add .claude/hooks.py .claude/settings.json
+git commit -m "Add project hooks"
 ```
 
-## How It Works
+Teammates will get the hooks automatically when they pull.
 
-1. Claude Code calls your hook via stdin/stdout
-2. `app.run()` reads the JSON event from stdin
-3. Your handler receives a typed `event` object
-4. Return `allow()`, `deny(reason)`, or `None`
-5. fasthooks writes the JSON response to stdout
+## Next steps
 
-```
-Claude Code → stdin (JSON) → fasthooks → handler → response → stdout → Claude Code
-```
-
-## Next Steps
-
-- [Events](tutorial/events.md) - Learn about different event types
+- [Events](tutorial/events.md) - Learn about different event types (`Bash`, `Write`, `Edit`, etc.)
 - [Responses](tutorial/responses.md) - Understand `allow()`, `deny()`, `block()`
+- [Dependency Injection](tutorial/dependencies.md) - Access `Transcript` and `State`
+- [CLI Reference](cli.md) - All CLI commands and options
 - [Testing](tutorial/testing.md) - Write tests for your hooks

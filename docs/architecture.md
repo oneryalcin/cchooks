@@ -309,3 +309,103 @@ def check(event, tasks: Tasks):
 Backend options:
 - `InMemoryBackend`: Default, single-process
 - Custom backends for distributed execution
+
+---
+
+## CLI Architecture
+
+The fasthooks CLI (`fasthooks init`, `install`, `uninstall`, `status`) bridges user's Python hooks with Claude Code's JSON configuration.
+
+### Install Flow
+
+```
+fasthooks install .claude/hooks.py
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Validate hooks.py                                        │
+│    - Run in subprocess (isolated from CLI process)          │
+│    - Catches syntax errors, import errors                   │
+│    - 10-second timeout prevents hangs                       │
+└─────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 2. Introspect HookApp                                       │
+│    - Find `app` variable (HookApp instance)                 │
+│    - Extract registered handlers from internal structures   │
+│    - Build list: ["PreToolUse:Bash", "PostToolUse:*", ...]  │
+└─────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 3. Generate settings.json configuration                     │
+│    - Build command: uv run --with fasthooks "$CLAUDE_..."   │
+│    - Group handlers by event type                           │
+│    - Combine matchers with | (e.g., "Bash|Write")           │
+└─────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 4. Merge with existing settings                             │
+│    - Read existing settings.json (supports JSONC/comments)  │
+│    - Remove our old entries (by command match)              │
+│    - Add new entries                                        │
+│    - Preserve other hooks (different commands)              │
+└─────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 5. Write lock file                                          │
+│    - Records: hooks_path, handlers, command, timestamp      │
+│    - Enables clean uninstall and status checking            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Lock File Format
+
+```json
+{
+  "version": 1,
+  "installed_at": "2024-01-15T10:30:00Z",
+  "hooks_path": ".claude/hooks.py",
+  "hooks_registered": ["PreToolUse:Bash", "PostToolUse:*", "Stop"],
+  "settings_file": ".claude/settings.json",
+  "command": "uv run --with fasthooks \"$CLAUDE_PROJECT_DIR/.claude/hooks.py\""
+}
+```
+
+### Path Handling
+
+The CLI uses `$CLAUDE_PROJECT_DIR` for portable paths:
+
+```python
+# Generated command in settings.json
+"uv run --with fasthooks \"$CLAUDE_PROJECT_DIR/.claude/hooks.py\""
+#                          └── Claude Code provides this at runtime
+```
+
+This allows settings.json to be committed to git and work across machines.
+
+### Scope Resolution
+
+```
+get_settings_path(scope, project_root):
+    project → project_root/.claude/settings.json
+    user    → ~/.claude/settings.json
+    local   → project_root/.claude/settings.local.json
+
+get_lock_path(scope, project_root):
+    project → project_root/.claude/.fasthooks.lock
+    user    → ~/.claude/.fasthooks.lock
+    local   → project_root/.claude/.fasthooks.local.lock
+```
+
+### Introspection Safety
+
+User hooks.py may have side effects at import time (db connections, prints, etc.). The CLI runs introspection in a **subprocess** to:
+
+1. Isolate side effects from CLI process
+2. Catch crashes without killing CLI
+3. Enforce 10-second timeout
+4. Prevent environment pollution

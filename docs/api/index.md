@@ -15,6 +15,18 @@ Auto-generated API documentation from source code docstrings.
 | [Claude Integration](contrib-claude.md) | Claude Agent SDK wrapper |
 | [Testing](testing.md) | Testing utilities |
 
+## CLI Utilities
+
+Internal modules used by the `fasthooks` CLI. These are not part of the public API but documented for contributors.
+
+| Module | Description |
+|--------|-------------|
+| `fasthooks.cli_utils.validation` | Hooks.py validation and introspection |
+| `fasthooks.cli_utils.settings` | Settings.json read/write/merge |
+| `fasthooks.cli_utils.lock` | Lock file management |
+| `fasthooks.cli_utils.paths` | Project root detection, path handling |
+| `fasthooks.cli_utils.introspect` | Handler extraction and config generation |
+
 ## Quick Links
 
 ```python
