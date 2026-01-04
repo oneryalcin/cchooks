@@ -6,7 +6,7 @@ import inspect
 import sys
 from collections.abc import Callable, Coroutine
 from pathlib import Path
-from typing import IO, Any, get_type_hints
+from typing import IO, TYPE_CHECKING, Any, get_type_hints
 
 import anyio
 
@@ -41,6 +41,10 @@ from fasthooks.registry import HandlerEntry, HandlerRegistry
 from fasthooks.responses import BaseHookResponse
 from fasthooks.tasks.backend import BaseBackend, InMemoryBackend
 from fasthooks.tasks.depends import BackgroundTasks, PendingResults, Tasks
+
+if TYPE_CHECKING:
+    from fasthooks.strategies.base import Strategy
+    from fasthooks.strategies.registry import StrategyRegistry as StrategyRegistryType
 
 # Map tool names to typed event classes
 TOOL_EVENT_MAP: dict[str, type[ToolEvent]] = {
@@ -81,6 +85,7 @@ class HookApp(HandlerRegistry):
         self._logger = EventLogger(log_dir) if log_dir else None
         self._middleware: list[Callable[..., Any]] = []
         self._task_backend: BaseBackend | None = task_backend  # Lazy init
+        self._strategy_registry: StrategyRegistryType | None = None  # Lazy init
 
     @property
     def task_backend(self) -> BaseBackend:
@@ -88,6 +93,15 @@ class HookApp(HandlerRegistry):
         if self._task_backend is None:
             self._task_backend = InMemoryBackend()
         return self._task_backend
+
+    @property
+    def strategy_registry(self) -> StrategyRegistryType:
+        """Get the strategy registry, creating if needed."""
+        if self._strategy_registry is None:
+            from fasthooks.strategies.registry import StrategyRegistry
+
+            self._strategy_registry = StrategyRegistry()
+        return self._strategy_registry
 
     # ═══════════════════════════════════════════════════════════════
     # Middleware
@@ -137,6 +151,40 @@ class HookApp(HandlerRegistry):
         # Copy lifecycle handlers
         for event_type, handlers in blueprint._lifecycle_handlers.items():
             self._lifecycle_handlers[event_type].extend(handlers)
+
+    def include_strategy(self, strategy: Strategy) -> None:
+        """Include a strategy with conflict detection.
+
+        Registers the strategy and includes its blueprint. Raises an error
+        if the strategy's hooks conflict with an already-registered strategy.
+
+        Args:
+            strategy: Strategy to include.
+
+        Raises:
+            StrategyConflictError: If strategy's hooks conflict with
+                an existing strategy.
+
+        Example:
+            app = HookApp()
+
+            # First strategy registers fine
+            app.include_strategy(LongRunningStrategy())
+
+            # Second strategy with same hooks raises error
+            app.include_strategy(AnotherStopStrategy())
+            # StrategyConflictError: Conflict on 'on_stop'
+        """
+        # Register with conflict detection
+        self.strategy_registry.register(strategy)
+
+        # Include the blueprint
+        self.include(strategy.get_blueprint())
+
+    @property
+    def strategies(self) -> list[Strategy]:
+        """All registered strategies."""
+        return self.strategy_registry.strategies
 
     # ═══════════════════════════════════════════════════════════════
     # Runtime

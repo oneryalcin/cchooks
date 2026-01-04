@@ -14,6 +14,6 @@ class BaseEvent(BaseModel):
 
     session_id: str
     cwd: str
-    permission_mode: str
+    permission_mode: str | None = None  # Not always sent (e.g., SessionStart)
     hook_event_name: str
     transcript_path: str | None = None

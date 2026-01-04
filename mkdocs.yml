@@ -59,6 +59,9 @@ nav:
       - api/transcript.md
       - api/contrib-claude.md
       - api/testing.md
+  - Strategies:
+      - strategies/index.md
+      - Long-Running Agent: strategies/long-running.md
   - Architecture: architecture.md
   - Comparisons:
       - comparison/index.md

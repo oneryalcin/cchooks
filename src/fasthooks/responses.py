@@ -161,3 +161,58 @@ def deny_permission(
         PermissionHookResponse with deny behavior
     """
     return PermissionHookResponse(behavior="deny", message=message, interrupt=interrupt)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SessionStart/UserPromptSubmit responses (additionalContext format)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class ContextResponse(BaseHookResponse):
+    """Response for SessionStart/UserPromptSubmit hooks that adds context."""
+
+    hook_event_name: str  # "SessionStart" or "UserPromptSubmit"
+    additional_context: str
+    system_message: str | None = None
+
+    def to_json(self) -> str:
+        """Serialize to Claude Code format with additionalContext."""
+        output: dict[str, Any] = {
+            "hookSpecificOutput": {
+                "hookEventName": self.hook_event_name,
+                "additionalContext": self.additional_context,
+            }
+        }
+        if self.system_message:
+            output["systemMessage"] = self.system_message
+        return json.dumps(output)
+
+    def should_return(self) -> bool:
+        """Always return context responses."""
+        return True
+
+
+def context(
+    text: str,
+    *,
+    hook_event: str = "SessionStart",
+    system_message: str | None = None,
+) -> ContextResponse:
+    """Add context to SessionStart or UserPromptSubmit hooks.
+
+    This injects text into Claude's context (not just shown to user).
+
+    Args:
+        text: Context text to inject into Claude's conversation
+        hook_event: Either "SessionStart" or "UserPromptSubmit"
+        system_message: Optional warning message shown to user
+
+    Returns:
+        ContextResponse that adds context to Claude
+    """
+    return ContextResponse(
+        hook_event_name=hook_event,
+        additional_context=text,
+        system_message=system_message,
+    )
