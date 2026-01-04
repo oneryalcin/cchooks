@@ -102,6 +102,6 @@ fasthooks gives you a **FastAPI-like experience**:
 
 ## Next Steps
 
-- [Getting Started](getting-started.md) - Set up your first hook project
+- [Getting Started](getting-started.md) - Set up your first hook in 5 minutes
 - [Tutorial](tutorial/index.md) - Learn fasthooks step by step
-- [CLI Reference](cli.md) - Command line tools
+- [CLI Reference](cli.md) - `init`, `install`, `uninstall`, `status` commands

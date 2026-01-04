@@ -63,6 +63,7 @@ nav:
       - strategies/index.md
       - Long-Running Agent: strategies/long-running.md
   - Architecture: architecture.md
+  - Testing Guide: testing.md
   - Comparisons:
       - comparison/index.md
       - cchooks: comparison/cchooks.md
