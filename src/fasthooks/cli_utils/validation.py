@@ -13,6 +13,9 @@ _INTROSPECT_SCRIPT = '''
 import sys
 import json
 
+# Add parent directory to sys.path so hooks.py can import local modules
+sys.path.insert(0, "PARENT_DIR")
+
 try:
     import importlib.util
     spec = importlib.util.spec_from_file_location("hooks", "HOOKS_PATH")
@@ -97,8 +100,10 @@ def validate_and_introspect(path: Path) -> tuple[bool, list[str] | None, str | N
     if not path.exists():
         return (False, None, f"File not found: {path}")
 
-    # Build script with actual path
-    script = _INTROSPECT_SCRIPT.replace("HOOKS_PATH", str(path.resolve()))
+    # Build script with actual paths
+    resolved = path.resolve()
+    script = _INTROSPECT_SCRIPT.replace("HOOKS_PATH", str(resolved))
+    script = script.replace("PARENT_DIR", str(resolved.parent))
 
     try:
         result = subprocess.run(

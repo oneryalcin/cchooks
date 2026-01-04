@@ -499,6 +499,30 @@ def check(event):
         assert success is True
         assert "PreToolUse:Bash" in hooks
 
+    def test_local_imports(self, tmp_path: Path):
+        """Supports hooks.py that imports local modules."""
+        # Create helper module
+        helper = tmp_path / "helper.py"
+        helper.write_text("BLOCKED = ['rm -rf']")
+
+        # Create hooks.py that imports helper
+        hooks_file = tmp_path / "hooks.py"
+        hooks_file.write_text(
+            """
+from fasthooks import HookApp
+from helper import BLOCKED
+
+app = HookApp()
+
+@app.pre_tool("Bash")
+def check(event):
+    pass
+"""
+        )
+        success, hooks, error = validate_and_introspect(hooks_file)
+        assert success is True
+        assert "PreToolUse:Bash" in hooks
+
 
 class TestGenerateSettings:
     """Tests for generate_settings."""
