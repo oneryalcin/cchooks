@@ -65,11 +65,16 @@ def run_init(path: str, force: bool, console: Console) -> int:
         console.print("  Use [bold]--force[/bold] to overwrite")
         return 1
 
-    # Create parent directories
-    target.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write template
-    target.write_text(HOOKS_TEMPLATE)
+    # Create parent directories and write template
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(HOOKS_TEMPLATE)
+    except PermissionError:
+        console.print(f"[red]✗[/red] Permission denied: {path}")
+        return 1
+    except OSError as e:
+        console.print(f"[red]✗[/red] Cannot write {path}: {e}")
+        return 1
 
     console.print(f"[green]✓[/green] Created {path}")
     console.print()

@@ -156,6 +156,86 @@ class TestInitCommand:
         assert result.returncode == 0
         assert (tmp_path / "a" / "b" / "c" / "hooks.py").exists()
 
+    def test_init_short_flag_force(self, tmp_path: Path, monkeypatch):
+        """fasthooks init -f works as alias for --force."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude" / "hooks.py").write_text("existing")
+        result = subprocess.run(
+            [sys.executable, "-m", "fasthooks", "init", "-f"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "HookApp" in (tmp_path / ".claude" / "hooks.py").read_text()
+
+    def test_init_short_flag_path(self, tmp_path: Path, monkeypatch):
+        """fasthooks init -p works as alias for --path."""
+        monkeypatch.chdir(tmp_path)
+        result = subprocess.run(
+            [sys.executable, "-m", "fasthooks", "init", "-p", "custom/hooks.py"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert (tmp_path / "custom" / "hooks.py").exists()
+
+
+class TestInitCommandUnit:
+    """Unit tests for init command (direct function calls for coverage)."""
+
+    def test_run_init_creates_file(self, tmp_path: Path, monkeypatch):
+        """run_init creates hooks.py file."""
+        from io import StringIO
+
+        from rich.console import Console
+
+        from fasthooks.cli.commands.init import run_init
+
+        monkeypatch.chdir(tmp_path)
+        console = Console(file=StringIO(), force_terminal=True)
+        result = run_init(".claude/hooks.py", force=False, console=console)
+        assert result == 0
+        assert (tmp_path / ".claude" / "hooks.py").exists()
+
+    def test_run_init_permission_denied(self, tmp_path: Path, monkeypatch):
+        """run_init handles permission errors gracefully."""
+        from io import StringIO
+        from unittest.mock import patch
+
+        from rich.console import Console
+
+        from fasthooks.cli.commands.init import run_init
+
+        monkeypatch.chdir(tmp_path)
+        output = StringIO()
+        console = Console(file=output, force_terminal=True)
+
+        with patch("pathlib.Path.write_text", side_effect=PermissionError("denied")):
+            result = run_init(".claude/hooks.py", force=False, console=console)
+
+        assert result == 1
+        assert "Permission denied" in output.getvalue()
+
+    def test_run_init_oserror(self, tmp_path: Path, monkeypatch):
+        """run_init handles OS errors gracefully."""
+        from io import StringIO
+        from unittest.mock import patch
+
+        from rich.console import Console
+
+        from fasthooks.cli.commands.init import run_init
+
+        monkeypatch.chdir(tmp_path)
+        output = StringIO()
+        console = Console(file=output, force_terminal=True)
+
+        with patch("pathlib.Path.write_text", side_effect=OSError("disk full")):
+            result = run_init(".claude/hooks.py", force=False, console=console)
+
+        assert result == 1
+        assert "Cannot write" in output.getvalue()
+
 
 class TestCLICommandHelp:
     """Each command has --help."""
