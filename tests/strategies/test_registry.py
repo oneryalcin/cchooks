@@ -64,6 +64,54 @@ class BashStrategy(Strategy):
         return bp
 
 
+class CatchAllToolStrategy(Strategy):
+    """Strategy that uses catch-all post_tool:* hook."""
+
+    class Meta:
+        name = "catch-all-tool"
+        version = "1.0.0"
+        hooks = ["post_tool:*"]
+
+    def _build_blueprint(self) -> Blueprint:
+        bp = Blueprint("catch-all-tool")
+
+        @bp.post_tool()
+        def on_any_tool(event: object) -> None:
+            pass
+
+        return bp
+
+
+class SpecificToolStrategy(Strategy):
+    """Strategy that uses specific post_tool:Write hook."""
+
+    class Meta:
+        name = "specific-tool"
+        version = "1.0.0"
+        hooks = ["post_tool:Write"]
+
+    def _build_blueprint(self) -> Blueprint:
+        bp = Blueprint("specific-tool")
+
+        @bp.post_tool("Write")
+        def on_write(event: object) -> None:
+            pass
+
+        return bp
+
+
+class EmptyHooksStrategy(Strategy):
+    """Strategy with no hooks declared."""
+
+    class Meta:
+        name = "empty-hooks"
+        version = "1.0.0"
+        hooks = []
+
+    def _build_blueprint(self) -> Blueprint:
+        return Blueprint("empty-hooks")
+
+
 class MultiHookStrategy(Strategy):
     """Strategy with multiple hooks."""
 
@@ -170,6 +218,57 @@ class TestStrategyRegistry:
         assert "on_stop" in hooks
         assert hooks["on_stop"].name == "stop-strategy"
 
+    def test_same_strategy_twice_conflicts(self) -> None:
+        """Same strategy class registered twice conflicts."""
+        registry = StrategyRegistry()
+        registry.register(StopStrategy())
+
+        with pytest.raises(StrategyConflictError) as exc_info:
+            registry.register(StopStrategy())  # New instance, same hooks
+
+        assert exc_info.value.hook == "on_stop"
+
+    def test_empty_hooks_registers(self) -> None:
+        """Strategy with empty hooks list registers without issue."""
+        registry = StrategyRegistry()
+
+        registry.register(EmptyHooksStrategy())
+
+        assert registry.is_registered("empty-hooks")
+        assert len(registry.hooks) == 0
+
+    def test_catch_all_conflicts_with_specific(self) -> None:
+        """Catch-all hook conflicts with specific hook."""
+        registry = StrategyRegistry()
+        registry.register(SpecificToolStrategy())  # post_tool:Write
+
+        with pytest.raises(StrategyConflictError) as exc_info:
+            registry.register(CatchAllToolStrategy())  # post_tool:*
+
+        assert exc_info.value.hook == "post_tool:*"
+        assert exc_info.value.existing.name == "specific-tool"
+
+    def test_specific_conflicts_with_catch_all(self) -> None:
+        """Specific hook conflicts with already registered catch-all."""
+        registry = StrategyRegistry()
+        registry.register(CatchAllToolStrategy())  # post_tool:*
+
+        with pytest.raises(StrategyConflictError) as exc_info:
+            registry.register(SpecificToolStrategy())  # post_tool:Write
+
+        assert exc_info.value.hook == "post_tool:Write"
+        assert exc_info.value.existing.name == "catch-all-tool"
+
+    def test_different_prefixes_no_conflict(self) -> None:
+        """Different hook prefixes don't conflict."""
+        registry = StrategyRegistry()
+
+        # pre_tool:Bash and post_tool:* have different prefixes
+        registry.register(BashStrategy())  # pre_tool:Bash
+        registry.register(CatchAllToolStrategy())  # post_tool:*
+
+        assert len(registry.strategies) == 2
+
 
 class TestStrategyConflictError:
     """StrategyConflictError tests."""
@@ -256,3 +355,52 @@ class TestHookAppIncludeStrategy:
 
         # But only first is in strategies list
         assert len(app.strategies) == 1
+
+
+class TestRealStrategyIntegration:
+    """Integration tests with real built-in strategies."""
+
+    def test_token_budget_and_clean_state_no_conflict(self) -> None:
+        """TokenBudgetStrategy and CleanStateStrategy don't conflict."""
+        from fasthooks.strategies import CleanStateStrategy, TokenBudgetStrategy
+
+        app = HookApp()
+
+        # TokenBudgetStrategy uses post_tool:*
+        # CleanStateStrategy uses on_stop
+        # Different hook types - no conflict
+        app.include_strategy(TokenBudgetStrategy())
+        app.include_strategy(CleanStateStrategy())
+
+        assert len(app.strategies) == 2
+
+    def test_long_running_and_token_budget_conflict(self) -> None:
+        """LongRunningStrategy and TokenBudgetStrategy conflict on post_tool."""
+        from fasthooks.strategies import LongRunningStrategy, TokenBudgetStrategy
+
+        app = HookApp()
+
+        # LongRunningStrategy uses post_tool:Write, post_tool:Edit, post_tool:Bash
+        app.include_strategy(LongRunningStrategy())
+
+        # TokenBudgetStrategy uses post_tool:* which conflicts
+        with pytest.raises(StrategyConflictError) as exc_info:
+            app.include_strategy(TokenBudgetStrategy())
+
+        assert exc_info.value.hook == "post_tool:*"
+        assert exc_info.value.existing.name == "long-running"
+
+    def test_long_running_and_clean_state_conflict(self) -> None:
+        """LongRunningStrategy and CleanStateStrategy conflict on on_stop."""
+        from fasthooks.strategies import CleanStateStrategy, LongRunningStrategy
+
+        app = HookApp()
+
+        app.include_strategy(LongRunningStrategy())
+
+        with pytest.raises(StrategyConflictError) as exc_info:
+            app.include_strategy(CleanStateStrategy())
+
+        assert exc_info.value.hook == "on_stop"
+        assert exc_info.value.existing.name == "long-running"
+        assert exc_info.value.incoming.name == "clean-state"

@@ -272,11 +272,16 @@ class Meta:
 
 ### When Conflicts Occur
 
-A conflict occurs when two strategies both:
-1. Register hooks for the same event
-2. At least one may return `block()` or `deny()`
+A conflict occurs when two strategies register hooks for the same event.
 
-Non-blocking hooks (that only return `allow()` with messages) do not conflict.
+**All hook overlaps are treated as conflicts.** This is intentionally strict:
+- Prevents unpredictable behavior from multiple handlers
+- Easier to reason about than "blocking vs non-blocking" distinction
+- Forces explicit resolution at configuration time
+
+**Catch-all hooks (`*`) conflict with specific hooks:**
+- `post_tool:*` conflicts with `post_tool:Bash`
+- `pre_tool:*` conflicts with `pre_tool:Write`
 
 ### Detection Mechanism
 
@@ -285,23 +290,34 @@ class StrategyRegistry:
     """Manages strategy registration and conflict detection."""
 
     def __init__(self):
-        self._blocking_hooks: dict[str, StrategyMeta] = {}
-        self._registered: list[Strategy] = []
+        self._hook_owners: dict[str, StrategyMeta] = {}
+        self._strategies: list[Strategy] = []
 
     def register(self, strategy: Strategy) -> None:
         meta = strategy.get_meta()
 
         for hook in meta.hooks:
-            if hook in self._blocking_hooks:
-                existing = self._blocking_hooks[hook]
-                raise StrategyConflictError(
-                    f"Conflict: Both '{existing.name}' and '{meta.name}' "
-                    f"register blocking hook for '{hook}'. "
-                    f"Resolve by removing one strategy or adjusting configuration."
-                )
-            self._blocking_hooks[hook] = meta
+            # Check exact match
+            if hook in self._hook_owners:
+                raise StrategyConflictError(hook, self._hook_owners[hook], meta)
 
-        self._registered.append(strategy)
+            # Check catch-all conflicts
+            if hook.endswith(":*"):
+                prefix = hook[:-1]  # "post_tool:"
+                for existing_hook in self._hook_owners:
+                    if existing_hook.startswith(prefix):
+                        raise StrategyConflictError(hook, self._hook_owners[existing_hook], meta)
+            else:
+                # Check if catch-all already registered
+                parts = hook.split(":")
+                if len(parts) == 2:
+                    catch_all = f"{parts[0]}:*"
+                    if catch_all in self._hook_owners:
+                        raise StrategyConflictError(hook, self._hook_owners[catch_all], meta)
+
+            self._hook_owners[hook] = meta
+
+        self._strategies.append(strategy)
 ```
 
 ### Error Message
@@ -310,18 +326,18 @@ class StrategyRegistry:
 StrategyConflictError: Conflict detected!
 
   Hook: on_stop
-  Strategy 1: LongRunningStrategy (blocks if uncommitted changes)
-  Strategy 2: SecurityStrategy (blocks if sensitive files modified)
+  Strategy 1: long-running v1.0.0
+  Strategy 2: clean-state v1.0.0
 
 Resolution options:
   1. Remove one strategy from configuration
-  2. Configure one strategy to use 'warn' instead of 'block' (if supported)
+  2. Configure one strategy to use a different hook
   3. Create a combined strategy that handles both concerns
 ```
 
 ### When Detection Happens
 
-- **At registration time** (when `app.include(strategy.get_blueprint())` is called)
+- **At registration time** (when `app.include_strategy(strategy)` is called)
 - **Not at runtime** - conflicts are detected before any hooks run
 
 ---
