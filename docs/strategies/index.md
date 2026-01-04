@@ -30,7 +30,7 @@ def rate_limit(event, state: State):
 ### Use Strategy When:
 
 - **Reusing a proven pattern** - don't reinvent complex logic
-- **Distributing hooks** - share via PyPI, configure via YAML
+- **Distributing hooks** - share via PyPI packages
 - **Multiple strategies coexisting** - namespace isolation prevents state collisions
 - **Debugging complex behavior** - built-in observability
 
@@ -58,7 +58,7 @@ Raw fasthooks already provides state, multiple hooks, and complex logic. Strateg
 |---------|-----------|----------|
 | State persistence | `state: State` DI | Same, plus auto-namespacing |
 | Multiple hooks | Register each manually | Bundle as single unit |
-| Configuration | Hardcoded or manual | Kwargs + YAML support |
+| Configuration | Hardcoded or manual | Kwargs with validation |
 | Observability | Manual logging | Built-in events |
 | Distribution | Copy-paste code | PyPI packages |
 | Conflict detection | None | Meta.hooks declaration |
@@ -159,8 +159,7 @@ We provide them as built-in strategies to:
 
 1. **Demonstrate the pattern** - see how Strategy wraps simple logic
 2. **Provide starting points** - extend them for your needs
-3. **Enable YAML configuration** - no code needed for simple setups
-4. **Show the spectrum** - from simple (1 hook) to complex (5 hooks)
+3. **Show the spectrum** - from simple (1 hook) to complex (5 hooks)
 
 For simple cases, raw hooks are often cleaner. As complexity grows, Strategy pays off.
 
@@ -234,7 +233,7 @@ class MyStrategy(Strategy):
 | `version` | Yes | Semantic version string |
 | `hooks` | Yes | List of hooks this strategy uses (for conflict detection) |
 | `description` | No | Human-readable description |
-| `fail_mode` | No | `"open"` (default) or `"closed"` - behavior on handler errors |
+| `fail_mode` | No | `"open"` or `"closed"` - metadata only (errors currently raise) |
 | `custom_events` | No | List of custom event types this strategy emits |
 | `state_namespace` | No | Override state namespace (defaults to strategy name) |
 
@@ -340,6 +339,15 @@ Events emitted:
 - `decision` - Handler returns allow/deny/block
 - `error` - Handler throws exception
 - `custom` - Strategy-specific events
+
+---
+
+## Future Work
+
+The following features are planned but not yet implemented:
+
+- **App-level observability** (`@app.on_observe`) - Single callback for all strategy events
+- **fail_mode enforcement** - Currently metadata-only; handler errors raise exceptions
 
 ---
 

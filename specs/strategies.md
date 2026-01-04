@@ -1126,27 +1126,29 @@ class Strategy:
 3. Add `fasthooks.strategies` module with both ✅
 4. Add observability module ✅
 
-### Phase 2: Testing & Built-ins
+### Phase 2: Testing & Built-ins ✅
 
-1. Add tests for Strategy base class and LongRunningStrategy
-2. Add tests for observability module
-3. Implement `TokenBudgetStrategy` built-in
-4. Implement `CleanStateStrategy` built-in
-5. Add conflict detection at registration time
+1. Add tests for Strategy base class and LongRunningStrategy ✅
+2. Add tests for observability module ✅
+3. Implement `TokenBudgetStrategy` built-in ✅
+4. Implement `CleanStateStrategy` built-in ✅
+5. Add conflict detection at registration time ✅
 
-### Phase 3: YAML Config & Entry Points
+### Phase 3: YAML Config & Entry Points ❌ DEFERRED
 
-1. Implement `app.load_strategies_from_yaml()`
-2. Add entry point discovery (`fasthooks.strategies` group)
-3. Document how to create strategy packages
-4. Add dry-run and validation commands
+Not implementing - Python API is sufficient. The complexity of YAML config
+and entry point discovery is not justified by the minimal benefit.
 
-### Phase 4: Documentation & Community
+### Phase 4: Documentation & Community ✅
 
-1. Create `docs/tutorial/strategies.md`
-2. Create `docs/tutorial/creating-strategies.md`
-3. Publish `fasthooks-longrunning` as separate PyPI package (example)
-4. Create GitHub topic `fasthooks-strategy` for discovery
+1. Strategy docs in `docs/strategies/index.md` ✅
+2. Creating strategies guide in `docs/strategies/index.md` ✅
+3. LongRunningStrategy guide in `docs/strategies/long-running.md` ✅
+
+### Future Work
+
+- **App-level observability** (`@app.on_observe`) - central callback for all strategies
+- **fail_mode enforcement** - currently metadata-only, errors raise exceptions
 
 ---
 
