@@ -730,24 +730,45 @@ src/fasthooks/studio/
 
 React app with conversation view.
 
+### Decision: React + Vite
+
+**Why React (not vanilla JS or HTMX):**
+- WebSocket + cache invalidation is natural with React Query
+- Collapsible blocks, JSON viewers need component state
+- ell-studio uses this pattern and it works well
+- Can bundle into `studio/static/` for distribution
+
+**Design inspiration from ell-studio:**
+- Will borrow CSS patterns and styling approach later
+- Reference: `/tmp/ell/ell-studio/src/` for component patterns
+- Dev-friendly dark theme, clean typography
+
 ### Tech Stack
 
 | Library | Purpose |
 |---------|---------|
+| Vite | Build tool (fast, simple) |
 | React 18 | UI framework |
-| React Query | Data fetching + cache |
-| Tailwind CSS | Styling |
-| WebSocket | Real-time updates |
+| @tanstack/react-query | Data fetching + cache invalidation |
+| Tailwind CSS | Utility-first styling |
+| WebSocket (native) | Real-time updates |
 
-### Component Structure
+### Project Structure
 
 ```
 studio-frontend/
+├── package.json
+├── vite.config.ts
+├── index.html
+├── tailwind.config.js
 ├── src/
-│   ├── App.tsx
+│   ├── main.tsx              # Entry point
+│   ├── App.tsx               # Layout + routing
+│   ├── api.ts                # Fetch helpers for /api/*
 │   ├── hooks/
-│   │   ├── useBackend.ts       # React Query + WebSocket
-│   │   └── useSessions.ts      # Session list query
+│   │   ├── useWebSocket.ts   # WS connection + query invalidation
+│   │   ├── useSessions.ts    # GET /api/sessions
+│   │   └── useConversation.ts # GET /api/sessions/{id}/conversation
 │   ├── components/
 │   │   ├── SessionList.tsx     # Sidebar with sessions
 │   │   ├── ConversationView.tsx # Main conversation display
@@ -757,12 +778,28 @@ studio-frontend/
 │   │   │   ├── ToolUse.tsx         # With nested HookEvents
 │   │   │   ├── ToolResult.tsx
 │   │   │   └── TextBlock.tsx
-│   │   ├── HookEvents.tsx      # Handler list with timing
+│   │   ├── HookEvents.tsx      # Handler list with timing/decision
 │   │   ├── InputPreview.tsx    # Expandable JSON viewer
 │   │   └── StatsBar.tsx        # Session statistics
 │   └── utils/
 │       └── formatters.ts       # Duration, timestamp formatting
+└── dist/                       # Built output → copy to studio/static/
 ```
+
+### Build & Distribution
+
+```bash
+# Development
+cd studio-frontend
+npm install
+npm run dev          # Vite dev server on :5173, proxies API to :5555
+
+# Production build
+npm run build        # Creates dist/
+cp -r dist/* ../src/fasthooks/studio/static/
+```
+
+The FastAPI server serves `studio/static/` in production mode.
 
 ### Key Components
 
