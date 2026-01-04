@@ -66,6 +66,14 @@ class TestFindProjectRoot:
         result = find_project_root(tmp_path / "subdir")
         assert result == (tmp_path / "subdir").resolve()
 
+    def test_finds_root_from_deep_nesting(self, tmp_path: Path):
+        """Finds project root from deeply nested directory."""
+        (tmp_path / ".git").mkdir()
+        deep_path = tmp_path / "a" / "b" / "c" / "d" / "e"
+        deep_path.mkdir(parents=True)
+        result = find_project_root(deep_path)
+        assert result == tmp_path
+
 
 class TestMakeRelativeCommand:
     """Tests for make_relative_command."""
@@ -81,6 +89,17 @@ class TestMakeRelativeCommand:
         hooks_path = tmp_path / "src" / "hooks" / "main.py"
         result = make_relative_command(hooks_path, tmp_path)
         assert result == 'uv run --with fasthooks "$CLAUDE_PROJECT_DIR/src/hooks/main.py"'
+
+    def test_path_not_under_project_raises(self, tmp_path: Path):
+        """Raises ValueError if hooks_path not under project_root."""
+        hooks_path = tmp_path / "hooks.py"
+        other_root = tmp_path / "other_project"
+        other_root.mkdir()
+        try:
+            make_relative_command(hooks_path, other_root)
+            assert False, "Should have raised ValueError"
+        except ValueError:
+            pass  # Expected
 
 
 class TestGetSettingsPath:
@@ -136,12 +155,25 @@ class TestReadSettings:
         result = read_settings(path)
         assert result == {"hooks": {}}
 
-    def test_reads_jsonc_with_comments(self, tmp_path: Path):
-        """Reads JSONC with comments."""
+    def test_reads_jsonc_with_line_comments(self, tmp_path: Path):
+        """Reads JSONC with // line comments."""
         path = tmp_path / "settings.json"
         path.write_text(
             """{
             // This is a comment
+            "hooks": {}
+        }"""
+        )
+        result = read_settings(path)
+        assert result == {"hooks": {}}
+
+    def test_reads_jsonc_with_block_comments(self, tmp_path: Path):
+        """Reads JSONC with /* */ block comments."""
+        path = tmp_path / "settings.json"
+        path.write_text(
+            """{
+            /* This is a
+               multi-line block comment */
             "hooks": {}
         }"""
         )
@@ -250,6 +282,29 @@ class TestMergeHooksConfig:
         new = {"hooks": {"Stop": [{"hooks": [{"command": "our.py"}]}]}}
         result = merge_hooks_config(existing, new, "our.py")
         assert result["allowedTools"] == ["Bash"]
+
+    def test_merges_multiple_event_types(self):
+        """Merges hooks across multiple event types."""
+        existing = {
+            "hooks": {
+                "PreToolUse": [{"matcher": "Write", "hooks": [{"command": "other.py"}]}],
+                "Stop": [{"hooks": [{"command": "other.py"}]}],
+            }
+        }
+        new = {
+            "hooks": {
+                "PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "our.py"}]}],
+                "PostToolUse": [{"matcher": "*", "hooks": [{"command": "our.py"}]}],
+                "Stop": [{"hooks": [{"command": "our.py"}]}],
+            }
+        }
+        result = merge_hooks_config(existing, new, "our.py")
+        # PreToolUse should have both entries
+        assert len(result["hooks"]["PreToolUse"]) == 2
+        # PostToolUse should be added
+        assert "PostToolUse" in result["hooks"]
+        # Stop should have both entries
+        assert len(result["hooks"]["Stop"]) == 2
 
 
 class TestRemoveHooksByCommand:

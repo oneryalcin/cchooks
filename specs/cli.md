@@ -1251,7 +1251,7 @@ src/fasthooks/cli_utils/
 - `write_settings(path: Path, data: dict) -> None`
 - `backup_settings(path: Path) -> Path | None`
 - `merge_hooks_config(existing: dict, new: dict, our_command: str) -> dict`
-- `remove_hooks_by_command(settings: dict, command: str) -> dict`
+- `remove_hooks_by_command(settings: dict, command: str) -> tuple[dict, int]` - returns (new_settings, count_removed)
 
 **JSONC Support (Comments in JSON):**
 
@@ -1297,7 +1297,7 @@ def write_settings(path: Path, data: dict) -> None:
 **lock.py functions:**
 - `read_lock(path: Path) -> dict | None`
 - `write_lock(path: Path, data: dict) -> None`
-- `delete_lock(path: Path) -> None`
+- `delete_lock(path: Path) -> bool` - returns True if file was deleted, False if it didn't exist
 
 **Acceptance criteria:**
 - [ ] `find_project_root()` finds .claude/, .git/, pyproject.toml
