@@ -1,6 +1,6 @@
 # Studio Spec
 
-**Status**: Ready for Implementation
+**Status**: Backend Implemented, Frontend Pending
 **Date**: 2026-01-04
 **Depends on**: `specs/observability.md` (implemented)
 
@@ -850,11 +850,11 @@ function DecisionBadge({ decision }: { decision: string }) {
 
 1. ~~**SQLiteObserver**~~ ✅ Implemented
 2. ~~**Verify data**~~ ✅ Sample data in `specs/studio/samples/`
-3. **Studio server** - FastAPI with conversation endpoint ← NEXT
-4. **File watcher** - Poll DB, broadcast via WebSocket
-5. **Studio frontend** - React conversation view
+3. ~~**Studio server**~~ ✅ FastAPI with conversation endpoint
+4. ~~**File watcher**~~ ✅ Poll DB every 500ms, WebSocket broadcast
+5. **Studio frontend** - React conversation view ← NEXT
 6. **CLI command** - `fasthooks studio`
-7. **Packaging** - Optional `[studio]` extra
+7. ~~**Packaging**~~ ✅ `pip install fasthooks[studio]`
 
 ---
 
