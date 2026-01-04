@@ -270,7 +270,7 @@ class LongRunningStrategy(Strategy):
     DEFAULT_MIN_FEATURES = 30
 
     # Default paths to exclude from uncommitted changes check
-    DEFAULT_EXCLUDE_PATHS = ["hooks/", ".claude/"]
+    DEFAULT_EXCLUDE_PATHS = ["hooks/", ".claude/", ".fasthooks-state/", "fasthooks-state/"]
 
     def __init__(
         self,
@@ -481,7 +481,7 @@ Update {self.progress_file} with current status.
 
     def _track_write(self, event: Any, state: State) -> Any | None:
         """Track writes, warn on feature_list.json structural changes."""
-        ns = state.get(self.Meta.name, {})
+        ns = state.setdefault(self.Meta.name, {})
         file_path = getattr(event, "file_path", "")
         ns.setdefault("files_modified", []).append(file_path)
 
@@ -525,7 +525,7 @@ Update {self.progress_file} with current status.
 
     def _track_bash(self, event: Any, state: State) -> Any | None:
         """Track git commits."""
-        ns = state.get(self.Meta.name, {})
+        ns = state.setdefault(self.Meta.name, {})
         command = getattr(event, "command", "")
 
         if self._is_git_commit(command):

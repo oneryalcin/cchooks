@@ -20,25 +20,26 @@ This spec assumes familiarity with:
 | Term | Definition |
 |------|------------|
 | **Strategy** | A class that bundles related hooks with configuration, providing a reusable pattern |
-| **Tap** | A Git repository containing strategy manifests (like Homebrew taps) |
 | **Blueprint** | Existing fasthooks construct for grouping handlers - strategies produce blueprints |
 | **Hook declaration** | String like `on_stop` or `pre_tool:Write` identifying which hook a strategy uses |
 | **State namespace** | Isolated section of State dict for a strategy: `state['strategy-name']['key']` |
+| **Entry point** | Python packaging mechanism for plugin discovery (`fasthooks.strategies` group) |
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Community Strategies (taps)                                    │
-│  - LongRunningAgentStrategy                                     │
-│  - CodeReviewStrategy                                           │
-│  - TestDrivenStrategy                                           │
+│  Community Strategies (PyPI packages)                           │
+│  - pip install fasthooks-longrunning                            │
+│  - pip install fasthooks-code-review                            │
+│  - pip install git+ssh://github.com/mycompany/internal.git      │
 ├─────────────────────────────────────────────────────────────────┤
 │  Built-in Strategies (fasthooks.strategies)                     │
+│  - LongRunningStrategy                                          │
 │  - TokenBudgetStrategy                                          │
 │  - CleanStateStrategy                                           │
 ├─────────────────────────────────────────────────────────────────┤
 │  Strategy Framework (fasthooks.strategies.base)                 │
 │  - Strategy base class                                          │
-│  - Registry, taps, conflict detection                           │
+│  - Entry point discovery, conflict detection                    │
 ├─────────────────────────────────────────────────────────────────┤
 │  Primitives (fasthooks core)                                    │
 │  - Transcript, State, Tasks                                     │
@@ -74,10 +75,10 @@ This spec assumes familiarity with:
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| **Discovery** | CLI registry with decentralized taps | Like Homebrew, flexible but community-driven |
-| **Tap trust** | Per-strategy approval | Adding tap is low-trust, installing strategy requires confirmation |
-| **Proprietary strategies** | Allowed | Maximize ecosystem, trust is per-strategy |
-| **Dependencies** | No strategy dependencies | Each strategy standalone, avoid complexity |
+| **Distribution** | PyPI + entry points | Standard Python ecosystem, zero custom tooling |
+| **Primary usage** | Explicit Python imports | Simple, explicit, no magic discovery |
+| **YAML config** | Entry point discovery | Optional, enables declarative configuration |
+| **Private strategies** | Git URLs or private PyPI | pip already supports this, no custom infrastructure |
 | **Built-ins** | Core essentials (2-3) | Quick start without external installs |
 
 ### Testing & Debugging
@@ -325,92 +326,142 @@ Resolution options:
 
 ---
 
-## Tap System (Decentralized Registry)
+## Distribution (PyPI + Entry Points)
 
-### What is a Tap?
-
-A tap is a Git repository containing strategy metadata and installation instructions.
-Similar to Homebrew taps, it allows decentralized distribution of strategies.
-
-### Local Storage
-
-Taps and installed strategies are stored in `~/.fasthooks/`:
-
-```
-~/.fasthooks/
-├── config.yaml              # Global fasthooks config
-├── taps/
-│   ├── anthropic/
-│   │   └── official-strategies/
-│   │       ├── .git/        # Cloned repo
-│   │       └── strategies.yaml
-│   └── mycorp/
-│       └── internal-strategies/
-├── installed/
-│   ├── long-running.yaml    # Installed strategy metadata
-│   └── token-budget.yaml
-└── state/
-    └── <session-id>.json    # Strategy state files
-```
-
-### Adding a Tap
-
-```bash
-# Add a tap (source of strategies)
-fasthooks tap add anthropic/official-strategies
-fasthooks tap add mycorp/internal-strategies
-
-# List taps
-fasthooks tap list
-
-# Remove a tap
-fasthooks tap remove mycorp/internal-strategies
-```
+Strategies are distributed as standard Python packages via PyPI. No custom package management required.
 
 ### Installing Strategies
 
 ```bash
-# Search available strategies
-fasthooks search long-running
+# Public strategies from PyPI
+pip install fasthooks-longrunning
+pip install fasthooks-token-budget
 
-# Install (with per-strategy approval)
-fasthooks install long-running
-# > Strategy: long-running v1.2.0
-# > Source: anthropic/official-strategies
-# > Hooks: on_stop, on_session_start, on_pre_compact
-# > Install and trust this strategy? [y/N]
+# Private/organizational strategies from git
+pip install git+ssh://git@github.com/mycompany/internal-strategy.git
 
-# List installed
-fasthooks list
-
-# Uninstall
-fasthooks uninstall long-running
+# Or via private PyPI index
+pip install --index-url https://pypi.mycompany.com fasthooks-internal
 ```
 
-### Tap Manifest Format
+### Usage: Explicit Python Imports (Primary)
 
-Each tap is a Git repository with a `strategies.yaml`:
+The simplest and most explicit approach—just import and use:
+
+```python
+# hooks.py
+from fasthooks import HookApp
+from fasthooks_longrunning import LongRunningStrategy  # Standard import
+
+app = HookApp()
+
+# Explicit usage - zero magic
+strategy = LongRunningStrategy(enforce_commits=True)
+app.include(strategy.get_blueprint())
+```
+
+**Why this is preferred:**
+- User knows exactly what is loaded (explicit imports)
+- No discovery edge cases (packages that crash on import)
+- Standard Python patterns
+
+### Usage: YAML Configuration (Optional)
+
+For declarative configuration, strategies can register via entry points:
+
+```toml
+# In strategy package's pyproject.toml
+[project.entry-points."fasthooks.strategies"]
+long-running = "fasthooks_longrunning:LongRunningStrategy"
+```
+
+This enables YAML-based configuration:
 
 ```yaml
-# strategies.yaml
-tap:
-  name: anthropic/official-strategies
-  maintainer: Anthropic
-  url: https://github.com/anthropics/fasthooks-strategies
-
+# fasthooks-config.yaml
 strategies:
   long-running:
-    version: "1.2.0"
-    description: "Harness for long-running autonomous agents"
-    package: fasthooks-long-running
-    pypi: true
-
-  token-budget:
-    version: "1.0.0"
-    description: "Track and warn on token usage"
-    package: fasthooks-token-budget
-    pypi: true
+    enforce_commits: true
+    feature_list: features.json
 ```
+
+```python
+# hooks.py
+from fasthooks import HookApp
+
+app = HookApp()
+app.load_strategies_from_yaml("fasthooks-config.yaml")  # Auto-discovers via entry points
+```
+
+### Entry Point Discovery Implementation
+
+```python
+from importlib.metadata import entry_points
+
+# Strategy registry built from entry points
+def discover_strategies() -> dict[str, type[Strategy]]:
+    """Discover installed strategies via entry points."""
+    eps = entry_points(group="fasthooks.strategies")
+    registry = {}
+    for ep in eps:
+        try:
+            registry[ep.name] = ep.load()
+        except Exception:
+            pass  # Skip broken packages
+    return registry
+
+STRATEGY_REGISTRY = discover_strategies()
+```
+
+### Creating a Strategy Package
+
+Minimal package structure:
+
+```
+fasthooks-mystrategy/
+├── pyproject.toml
+├── src/
+│   └── fasthooks_mystrategy/
+│       ├── __init__.py
+│       └── strategy.py
+└── README.md
+```
+
+```toml
+# pyproject.toml
+[project]
+name = "fasthooks-mystrategy"
+version = "1.0.0"
+dependencies = ["fasthooks>=0.5.0"]
+
+[project.entry-points."fasthooks.strategies"]
+my-strategy = "fasthooks_mystrategy:MyStrategy"
+```
+
+```python
+# src/fasthooks_mystrategy/__init__.py
+from .strategy import MyStrategy
+__all__ = ["MyStrategy"]
+```
+
+### Private/Organizational Strategies
+
+For internal strategies, no special infrastructure needed:
+
+```bash
+# Install from private git repo
+pip install git+ssh://git@github.com/mycompany/fasthooks-internal.git
+
+# Or use private PyPI (Artifactory, AWS CodeArtifact, etc.)
+pip install --index-url https://pypi.internal.mycompany.com fasthooks-internal
+```
+
+### Discovery for Humans
+
+For community discovery (not programmatic):
+- GitHub topic: `fasthooks-strategy`
+- PyPI search: `fasthooks-*`
+- Community awesome-list: `awesome-fasthooks`
 
 ---
 
@@ -769,7 +820,8 @@ def _track_write(self, event, state: State) -> HookResponse | None:
     ns = state.get(self.Meta.name, {})
     ns.setdefault("files_modified", []).append(event.file_path)
 
-    if self.feature_list in event.file_path:
+    # Use pathlib for reliable path comparison
+    if Path(event.file_path).name == Path(self.feature_list).name:
         # Check if structural change (not just passes field)
         if self._is_structural_change(event):
             return allow(message=(
@@ -778,7 +830,7 @@ def _track_write(self, event, state: State) -> HookResponse | None:
                 "Consider reverting structural changes."
             ))
 
-    if self.progress_file in event.file_path:
+    if Path(event.file_path).name == Path(self.progress_file).name:
         ns["progress_updated"] = True
 
     state.save()
@@ -995,19 +1047,6 @@ fasthooks dry-run --strategy long-running --sample samples/coding-session.jsonl
 fasthooks run hooks.py --dry-run
 ```
 
-### Tap Management
-
-```bash
-# Add official tap
-fasthooks tap add anthropic/official-strategies
-
-# Add custom tap
-fasthooks tap add mycorp/internal --url git@github.com:mycorp/fasthooks-strategies.git
-
-# Sync all taps
-fasthooks tap sync
-```
-
 ---
 
 ## Testing Support
@@ -1064,26 +1103,34 @@ class Strategy:
 
 ## Migration Path
 
-### Phase 1: Framework + Long-Running (Parallel)
+### Phase 1: Framework + Long-Running ✅
 
-1. Implement `Strategy` base class
-2. Implement `LongRunningStrategy` as first concrete strategy
-3. Add `fasthooks.strategies` module with both
-4. Document usage in `docs/tutorial/strategies.md`
+1. Implement `Strategy` base class ✅
+2. Implement `LongRunningStrategy` as first concrete strategy ✅
+3. Add `fasthooks.strategies` module with both ✅
+4. Add observability module ✅
 
-### Phase 2: Registry & Taps
+### Phase 2: Testing & Built-ins
 
-1. Implement tap management (`fasthooks tap add/remove/sync`)
-2. Create official tap repository
-3. Implement `fasthooks install/uninstall`
-4. Add per-strategy trust prompts
+1. Add tests for Strategy base class and LongRunningStrategy
+2. Add tests for observability module
+3. Implement `TokenBudgetStrategy` built-in
+4. Implement `CleanStateStrategy` built-in
+5. Add conflict detection at registration time
 
-### Phase 3: Community & Polish
+### Phase 3: YAML Config & Entry Points
 
-1. Document how to create strategies
-2. Add more built-in strategies (TokenBudget, CleanState)
-3. Improve conflict detection and error messages
+1. Implement `app.load_strategies_from_yaml()`
+2. Add entry point discovery (`fasthooks.strategies` group)
+3. Document how to create strategy packages
 4. Add dry-run and validation commands
+
+### Phase 4: Documentation & Community
+
+1. Create `docs/tutorial/strategies.md`
+2. Create `docs/tutorial/creating-strategies.md`
+3. Publish `fasthooks-longrunning` as separate PyPI package (example)
+4. Create GitHub topic `fasthooks-strategy` for discovery
 
 ---
 
@@ -1960,6 +2007,68 @@ src/fasthooks/
 
 ---
 
+## Implementation Notes (Robustness)
+
+Two implementation details require attention to avoid performance/concurrency issues:
+
+### 1. Observability Blocking
+
+**Risk**: In `Strategy._emit()`, user callbacks are called synchronously:
+
+```python
+def _emit(self, event: ObservabilityEvent) -> None:
+    for callback in self._observers:
+        callback(event)  # ⚠️ Blocks if callback is slow (e.g., HTTP POST)
+```
+
+If a user attaches a slow callback (e.g., synchronous HTTP POST to Datadog), it blocks the main hook execution, adding latency.
+
+**Fix**: User callbacks MUST be fire-and-forget:
+
+```python
+import threading
+
+def _emit(self, event: ObservabilityEvent) -> None:
+    for callback in self._observers:
+        try:
+            # Fire-and-forget: don't block hook execution
+            threading.Thread(target=callback, args=(event,), daemon=True).start()
+        except Exception:
+            pass
+```
+
+Or use a queue-based approach for batching.
+
+### 2. State Race Conditions
+
+**Risk**: `State.save()` writes without file locking:
+
+```python
+def save(self) -> None:
+    self._file.write_text(json.dumps(dict(self), indent=2))  # ⚠️ No lock
+```
+
+If multiple processes access the same state file, writes can corrupt data.
+
+**Mitigating factor**: Claude Code's hook protocol is synchronous (stdin→process→stdout), so hooks don't run concurrently within a session.
+
+**Fix**: Add file locking for robustness:
+
+```python
+import filelock  # or fasteners
+
+def save(self) -> None:
+    self._file.parent.mkdir(parents=True, exist_ok=True)
+    lock = filelock.FileLock(f"{self._file}.lock")
+    with lock:
+        # Atomic write: write to temp, then rename
+        tmp = self._file.with_suffix(".tmp")
+        tmp.write_text(json.dumps(dict(self), indent=2))
+        tmp.rename(self._file)
+```
+
+---
+
 ## Open Questions (Deferred)
 
 1. **Cost estimation**: Should strategies have access to token pricing for cost estimates?
@@ -2077,11 +2186,9 @@ class Bash(ToolEvent):
 | Path | Purpose |
 |------|---------|
 | `~/.fasthooks/` | Global fasthooks directory |
-| `~/.fasthooks/config.yaml` | Global config |
-| `~/.fasthooks/taps/` | Downloaded tap repositories |
-| `~/.fasthooks/installed/` | Installed strategy metadata |
+| `~/.fasthooks/observability/` | Observability event logs (JSONL) |
 | `~/.claude/settings.json` | Claude Code hook configuration |
-| `<project>/fasthooks-config.yaml` | Project-level strategy config |
+| `<project>/fasthooks-config.yaml` | Project-level strategy config (optional) |
 | `<state_dir>/<session>.json` | Strategy state files |
 
 ---
