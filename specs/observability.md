@@ -1,8 +1,8 @@
 # Observability Spec
 
-**Status**: Ready for Implementation
+**Status**: Implemented
 **Date**: 2026-01-04
-**Branch**: `feature/observability-spec`
+**Branch**: `feature/strategies`
 
 ---
 
@@ -23,18 +23,18 @@
 Add observability to `HookApp` via a simple observer protocol. Observers receive events about hook lifecycle, handler execution, and decisions.
 
 **What we're building (v1):**
-- `ObservabilityEvent` - Pydantic model for all events
+- `HookObservabilityEvent` - Pydantic model for all events
 - `BaseObserver` - Class with no-op defaults for third-party extensibility
 - `@app.on_observe` - Decorator for callback-style observers
 - `app.add_observer()` - Method for class-based observers
-- `StdOutObserver` - Built-in for debugging
-- `TestObserver` - Built-in for testing
+- `FileObserver` - Built-in for file-based logging (JSONL)
+- `EventCapture` - Built-in for testing
 
 **What we're NOT building (deferred):**
 - `ObserverContext` - Dropped; not needed for v1 (see Decisions)
-- `FileObserver` - Add when users need persistent logs
 - `MetricsObserver` - Add when users need aggregated stats
 - `SQLiteObserver` - Moves to `specs/studio.md`
+- `StdOutObserver` - Cannot use stdout/stderr in hooks (see Built-in Observers section)
 
 ---
 
@@ -44,7 +44,7 @@ All design decisions with rationale. No implicit knowledge.
 
 | Decision | Choice | Rationale | Alternatives Considered |
 |----------|--------|-----------|------------------------|
-| Event model | Pydantic `ObservabilityEvent` | Autocomplete, validation, clear schema. Users can `.model_dump()` for raw dict. | Plain dict (flexible but no DX) |
+| Event model | Pydantic `HookObservabilityEvent` | Autocomplete, validation, clear schema. Users can `.model_dump()` for raw dict. | Plain dict (flexible but no DX) |
 | Observer registration | Both `@app.on_observe` callback AND `app.add_observer(class)` | Flexibility. Quick debugging vs structured third-party integrations. | Callbacks only (simpler but third parties reinvent filtering) |
 | BaseObserver | Class with no-op default methods | Third parties override only what they need. IDE shows available methods. | Protocol/ABC (more strict, more boilerplate) |
 | ObserverContext | **DROPPED for v1** | Event already contains session_id, handler_name, tool_name. Only extra was `registered_handlers` list - not needed for v1. Add later if dashboards need it. | Keep (more info to observers) |
@@ -59,7 +59,7 @@ All design decisions with rationale. No implicit knowledge.
 | Error detail | Type + message only (no traceback) | Compact. Users can enable full logging separately. | Full traceback (verbose) |
 | Zero observers | Complete skip of event emission | Zero overhead when observability unused. | Always build events (consistent but wasteful) |
 | Observer removal | Add only; restart to reconfigure | Simple. No need to handle removal during iteration. | Add + remove (more control, more edge cases) |
-| Built-in observers | StdOutObserver + TestObserver only | Ship what we need. Add others when users ask. | All 5 (more maintenance, unused code) |
+| Built-in observers | FileObserver + EventCapture only | File-based logging (stdout/stderr unusable in hooks). EventCapture for tests. | StdOutObserver (breaks hook protocol) |
 | SQLiteObserver | Deferred to studio spec | Studio needs it, not core observability. Keep specs focused. | Include in v1 (scope creep) |
 | Decorator name | `@app.on_observe` | Matches Strategy pattern. Familiar. | `@app.observe` (shorter), `@app.on_event` (generic) |
 | Package location | `fasthooks.observability` | Extends existing `src/fasthooks/observability/` directory. | Top-level (clutters fasthooks namespace) |
@@ -99,16 +99,16 @@ hook_end (final_decision=deny, duration_ms=15.2)
 ```python
 # src/fasthooks/observability/events.py
 
-from datetime import datetime
-from pydantic import BaseModel
+from datetime import datetime, UTC
+from pydantic import BaseModel, Field
 
-class ObservabilityEvent(BaseModel):
+class HookObservabilityEvent(BaseModel):
     """Event passed to observers. Immutable by convention (don't mutate)."""
 
     # Identity
     event_type: str              # hook_start, handler_end, etc.
     hook_id: str                 # UUID for this hook invocation
-    timestamp: datetime          # When event was emitted
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # Context
     session_id: str              # From Claude Code input
@@ -137,7 +137,7 @@ class ObservabilityEvent(BaseModel):
 **Raw dict access:**
 ```python
 @app.on_observe
-def my_callback(event: ObservabilityEvent):
+def my_callback(event: HookObservabilityEvent):
     raw = event.model_dump()  # Plain dict if needed
 ```
 
@@ -166,12 +166,12 @@ def log_timing(event):
 ### Class-Style (Third-Party Integrations)
 
 ```python
-from fasthooks.observability import BaseObserver, StdOutObserver
+from fasthooks.observability import BaseObserver, FileObserver
 
 app = HookApp()
 
-# Built-in observer
-app.add_observer(StdOutObserver())
+# Built-in observer (writes to ~/.fasthooks/observability/events.jsonl)
+app.add_observer(FileObserver())
 
 # Custom observer - override only what you need
 class MyObserver(BaseObserver):
@@ -188,7 +188,7 @@ app.add_observer(MyObserver())
 ```python
 # src/fasthooks/observability/base.py
 
-from fasthooks.observability.events import ObservabilityEvent
+from fasthooks.observability.events import HookObservabilityEvent
 
 class BaseObserver:
     """
@@ -196,31 +196,31 @@ class BaseObserver:
     All methods have no-op defaults.
     """
 
-    def on_hook_start(self, event: ObservabilityEvent) -> None:
+    def on_hook_start(self, event: HookObservabilityEvent) -> None:
         """Called when hook invocation begins."""
         pass
 
-    def on_hook_end(self, event: ObservabilityEvent) -> None:
+    def on_hook_end(self, event: HookObservabilityEvent) -> None:
         """Called when hook invocation completes."""
         pass
 
-    def on_hook_error(self, event: ObservabilityEvent) -> None:
+    def on_hook_error(self, event: HookObservabilityEvent) -> None:
         """Called when hook-level error occurs."""
         pass
 
-    def on_handler_start(self, event: ObservabilityEvent) -> None:
+    def on_handler_start(self, event: HookObservabilityEvent) -> None:
         """Called when handler execution begins."""
         pass
 
-    def on_handler_end(self, event: ObservabilityEvent) -> None:
+    def on_handler_end(self, event: HookObservabilityEvent) -> None:
         """Called when handler execution completes."""
         pass
 
-    def on_handler_skip(self, event: ObservabilityEvent) -> None:
+    def on_handler_skip(self, event: HookObservabilityEvent) -> None:
         """Called when handler is skipped due to early deny."""
         pass
 
-    def on_handler_error(self, event: ObservabilityEvent) -> None:
+    def on_handler_error(self, event: HookObservabilityEvent) -> None:
         """Called when handler raises exception."""
         pass
 ```
@@ -229,56 +229,72 @@ class BaseObserver:
 
 ## Built-in Observers (v1)
 
-### StdOutObserver
+### Why No Stdout/Stderr Observer?
 
-For debugging during development.
+Claude Code hooks use **stdin/stdout JSON protocol**:
+- **stdout**: Reserved for JSON hook response. Any other output corrupts the response.
+- **stderr**: Treated as hook error by Claude Code. Causes spurious error messages.
 
-```python
-# src/fasthooks/observability/observers/stdout.py
+**File-based logging is the only safe option.** This matches the Strategy pattern's `FileObservabilityBackend`.
 
-class StdOutObserver(BaseObserver):
-    """Print events to stdout for debugging."""
+### FileObserver
 
-    def on_hook_start(self, event):
-        print(f"[hook_start] {event.hook_event_name}:{event.tool_name} hook_id={event.hook_id[:8]}")
-
-    def on_handler_end(self, event):
-        decision_str = event.decision or "allow"
-        print(f"  [{event.handler_name}] {event.duration_ms:.1f}ms → {decision_str}")
-
-    def on_handler_skip(self, event):
-        print(f"  [{event.handler_name}] SKIPPED ({event.skip_reason})")
-
-    def on_hook_end(self, event):
-        print(f"[hook_end] {event.duration_ms:.1f}ms → {event.decision or 'allow'}")
-
-    def on_handler_error(self, event):
-        print(f"  [{event.handler_name}] ERROR: {event.error_type}: {event.error_message}")
-```
-
-**Output example:**
-```
-[hook_start] PreToolUse:Bash hook_id=a1b2c3d4
-  [check_dangerous] 1.2ms → allow
-  [validate_command] 0.8ms → deny
-  [log_command] SKIPPED (early deny from validate_command)
-[hook_end] 2.5ms → deny
-```
-
-### TestObserver
-
-For testing hooks in unit tests.
+For debugging and production logging. Writes JSONL to files.
 
 ```python
-# src/fasthooks/observability/observers/test.py
+# src/fasthooks/observability/observers/file.py
 
-class TestObserver(BaseObserver):
+class FileObserver(BaseObserver):
+    """Write events to JSONL file for debugging/analysis."""
+
+    def __init__(self, path: Path | str | None = None):
+        if path is None:
+            path = Path.home() / ".fasthooks" / "observability" / "events.jsonl"
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _write(self, event: HookObservabilityEvent) -> None:
+        with open(self.path, "a") as f:
+            f.write(event.model_dump_json() + "\n")
+
+    def on_hook_start(self, event): self._write(event)
+    def on_hook_end(self, event): self._write(event)
+    def on_hook_error(self, event): self._write(event)
+    def on_handler_start(self, event): self._write(event)
+    def on_handler_end(self, event): self._write(event)
+    def on_handler_skip(self, event): self._write(event)
+    def on_handler_error(self, event): self._write(event)
+```
+
+**Usage:**
+```python
+from fasthooks.observability import FileObserver
+
+app = HookApp()
+app.add_observer(FileObserver())  # Writes to ~/.fasthooks/observability/events.jsonl
+app.add_observer(FileObserver("/tmp/my-hooks.jsonl"))  # Custom path
+```
+
+**Output format (JSONL):**
+```json
+{"event_type":"hook_start","hook_id":"a1b2c3d4-...","session_id":"...","hook_event_name":"PreToolUse","tool_name":"Bash",...}
+{"event_type":"handler_end","hook_id":"a1b2c3d4-...","handler_name":"check_dangerous","duration_ms":1.2,"decision":"allow",...}
+```
+
+### EventCapture
+
+For testing hooks in unit tests. Named to avoid pytest collection warnings.
+
+```python
+# src/fasthooks/observability/observers/capture.py
+
+class EventCapture(BaseObserver):
     """Capture events for test assertions."""
 
     def __init__(self):
-        self.events: list[ObservabilityEvent] = []
+        self.events: list[HookObservabilityEvent] = []
 
-    def _capture(self, event: ObservabilityEvent) -> None:
+    def _capture(self, event: HookObservabilityEvent) -> None:
         self.events.append(event)
 
     def on_hook_start(self, event): self._capture(event)
@@ -294,15 +310,14 @@ class TestObserver(BaseObserver):
         """Clear captured events."""
         self.events.clear()
 
-    def events_of_type(self, event_type: str) -> list[ObservabilityEvent]:
+    def events_of_type(self, event_type: str) -> list[HookObservabilityEvent]:
         """Filter events by type."""
         return [e for e in self.events if e.event_type == event_type]
 
-    def handler_events(self, handler_name: str) -> list[ObservabilityEvent]:
+    def handler_events(self, handler_name: str) -> list[HookObservabilityEvent]:
         """Filter events for specific handler."""
         return [e for e in self.events if e.handler_name == handler_name]
 
-    @property
     def decisions(self) -> list[str]:
         """Get all decisions from handler_end events."""
         return [e.decision for e in self.events_of_type("handler_end") if e.decision]
@@ -312,8 +327,8 @@ class TestObserver(BaseObserver):
 ```python
 def test_handler_denies_dangerous_command():
     app = HookApp()
-    observer = TestObserver()
-    app.add_observer(observer)
+    capture = EventCapture()
+    app.add_observer(capture)
 
     @app.pre_tool("Bash")
     def check(event):
@@ -321,11 +336,11 @@ def test_handler_denies_dangerous_command():
             return deny("Dangerous command")
 
     client = TestClient(app)
-    client.run(MockEvent.bash("rm -rf /"))
+    client.send(MockEvent.bash("rm -rf /"))
 
-    assert len(observer.events) == 4  # hook_start, handler_start, handler_end, hook_end
-    assert observer.events_of_type("handler_end")[0].decision == "deny"
-    assert "Dangerous" in observer.events_of_type("handler_end")[0].reason
+    assert len(capture.events) == 4  # hook_start, handler_start, handler_end, hook_end
+    assert capture.events_of_type("handler_end")[0].decision == "deny"
+    assert "Dangerous" in capture.events_of_type("handler_end")[0].reason
 ```
 
 ---
@@ -381,7 +396,7 @@ class HookApp:
 ### Emission Logic
 
 ```python
-    def _emit(self, event: ObservabilityEvent) -> None:
+    def _emit(self, event: HookObservabilityEvent) -> None:
         """
         Dispatch event to all observers.
 
@@ -435,10 +450,9 @@ def _dispatch(self, data: dict) -> dict:
     input_preview = json.dumps(data)[:4096]  # Truncate
 
     # Emit hook_start
-    self._emit(ObservabilityEvent(
+    self._emit(HookObservabilityEvent(
         event_type="hook_start",
         hook_id=hook_id,
-        timestamp=datetime.utcnow(),
         session_id=session_id,
         hook_event_name=hook_event_name,
         tool_name=tool_name,
@@ -458,10 +472,9 @@ def _dispatch(self, data: dict) -> dict:
         final_decision = result.get("decision", "allow")
     except Exception as e:
         # Emit hook_error
-        self._emit(ObservabilityEvent(
+        self._emit(HookObservabilityEvent(
             event_type="hook_error",
             hook_id=hook_id,
-            timestamp=datetime.utcnow(),
             session_id=session_id,
             hook_event_name=hook_event_name,
             tool_name=tool_name,
@@ -478,10 +491,9 @@ def _dispatch(self, data: dict) -> dict:
 
     # Emit hook_end
     duration_ms = (time.perf_counter() - start_time) * 1000
-    self._emit(ObservabilityEvent(
+    self._emit(HookObservabilityEvent(
         event_type="hook_end",
         hook_id=hook_id,
-        timestamp=datetime.utcnow(),
         session_id=session_id,
         hook_event_name=hook_event_name,
         tool_name=tool_name,
@@ -506,10 +518,9 @@ def _dispatch(self, data: dict) -> dict:
 # For each handler that should run:
 handler_start_time = time.perf_counter()
 
-self._emit(ObservabilityEvent(
+self._emit(HookObservabilityEvent(
     event_type="handler_start",
     hook_id=hook_id,
-    timestamp=datetime.utcnow(),
     session_id=session_id,
     hook_event_name=hook_event_name,
     tool_name=tool_name,
@@ -529,10 +540,9 @@ try:
         decision = result.decision  # "deny" or "block"
         reason = result.reason
 
-    self._emit(ObservabilityEvent(
+    self._emit(HookObservabilityEvent(
         event_type="handler_end",
         hook_id=hook_id,
-        timestamp=datetime.utcnow(),
         session_id=session_id,
         hook_event_name=hook_event_name,
         tool_name=tool_name,
@@ -546,10 +556,9 @@ try:
     # If deny/block, emit skip events for remaining handlers
     if decision in ("deny", "block"):
         for remaining_handler in remaining_handlers:
-            self._emit(ObservabilityEvent(
+            self._emit(HookObservabilityEvent(
                 event_type="handler_skip",
                 hook_id=hook_id,
-                timestamp=datetime.utcnow(),
                 session_id=session_id,
                 hook_event_name=hook_event_name,
                 tool_name=tool_name,
@@ -560,10 +569,9 @@ try:
         break  # Stop processing
 
 except Exception as e:
-    self._emit(ObservabilityEvent(
+    self._emit(HookObservabilityEvent(
         event_type="handler_error",
         hook_id=hook_id,
-        timestamp=datetime.utcnow(),
         session_id=session_id,
         hook_event_name=hook_event_name,
         tool_name=tool_name,
@@ -586,22 +594,22 @@ src/fasthooks/observability/
 ├── base.py                  # BaseObserver class
 └── observers/
     ├── __init__.py
-    ├── stdout.py            # StdOutObserver
-    └── test.py              # TestObserver
+    ├── file.py              # FileObserver
+    └── capture.py           # EventCapture
 ```
 
 **Public exports** (`__init__.py`):
 ```python
-from fasthooks.observability.events import ObservabilityEvent
+from fasthooks.observability.events import HookObservabilityEvent
 from fasthooks.observability.base import BaseObserver
-from fasthooks.observability.observers.stdout import StdOutObserver
-from fasthooks.observability.observers.test import TestObserver
+from fasthooks.observability.observers.file import FileObserver
+from fasthooks.observability.observers.capture import EventCapture
 
 __all__ = [
-    "ObservabilityEvent",
+    "HookObservabilityEvent",
     "BaseObserver",
-    "StdOutObserver",
-    "TestObserver",
+    "FileObserver",
+    "EventCapture",
 ]
 ```
 
@@ -684,13 +692,13 @@ class TestEmission:
     def test_handler_error_emitted_on_exception(self):
         """Handler exceptions emit handler_error"""
 
-class TestStdOutObserver:
-    def test_prints_to_stdout(self, capsys):
-        """StdOutObserver prints formatted output"""
+class TestFileObserver:
+    def test_writes_to_file(self, tmp_path):
+        """FileObserver writes JSONL to file"""
 
-class TestTestObserver:
+class TestEventCapture:
     def test_captures_all_events(self):
-        """TestObserver.events contains all emitted events"""
+        """EventCapture.events contains all emitted events"""
 
     def test_events_of_type_filters(self):
         """events_of_type() returns filtered list"""
@@ -709,14 +717,14 @@ class TestTestObserver:
 
 ## Implementation Order
 
-1. **Create `ObservabilityEvent` model** - `events.py`
+1. **Create `HookObservabilityEvent` model** - `events.py`
 2. **Create `BaseObserver` class** - `base.py`
 3. **Add `add_observer()` and `on_observe()` to HookApp** - `app.py`
 4. **Add `_emit()` method to HookApp** - `app.py`
 5. **Instrument `_dispatch()` with hook-level events** - `app.py`
 6. **Instrument handler loop with handler-level events** - `app.py`
-7. **Create `StdOutObserver`** - `observers/stdout.py`
-8. **Create `TestObserver`** - `observers/test.py`
+7. **Create `FileObserver`** - `observers/file.py`
+8. **Create `EventCapture`** - `observers/capture.py`
 9. **Write tests**
 10. **Add EventLogger deprecation warning**
 
@@ -743,11 +751,11 @@ class TestTestObserver:
 |------|---------|
 | `src/fasthooks/app.py` | Add `_observers`, `_callback_observers`, `add_observer()`, `on_observe()`, `_emit()`. Instrument `_dispatch()` and handler loop. |
 | `src/fasthooks/observability/__init__.py` | Add public exports |
-| `src/fasthooks/observability/events.py` | Create `ObservabilityEvent` model |
+| `src/fasthooks/observability/events.py` | Create `HookObservabilityEvent` model |
 | `src/fasthooks/observability/base.py` | Create `BaseObserver` class |
 | `src/fasthooks/observability/observers/__init__.py` | New file |
-| `src/fasthooks/observability/observers/stdout.py` | Create `StdOutObserver` |
-| `src/fasthooks/observability/observers/test.py` | Create `TestObserver` |
+| `src/fasthooks/observability/observers/file.py` | Create `FileObserver` |
+| `src/fasthooks/observability/observers/capture.py` | Create `EventCapture` |
 | `tests/test_observability.py` | New test file |
 
 ### Existing Code to Understand
@@ -768,7 +776,7 @@ Shows how third parties would build integrations using this API.
 ```python
 # Example: fasthooks-datadog (hypothetical package)
 
-from fasthooks.observability import BaseObserver, ObservabilityEvent
+from fasthooks.observability import BaseObserver, HookObservabilityEvent
 from datadog import statsd
 
 class DatadogObserver(BaseObserver):
@@ -777,7 +785,7 @@ class DatadogObserver(BaseObserver):
     def __init__(self, prefix: str = "fasthooks"):
         self.prefix = prefix
 
-    def on_hook_end(self, event: ObservabilityEvent) -> None:
+    def on_hook_end(self, event: HookObservabilityEvent) -> None:
         # Count hooks by event type
         statsd.increment(
             f"{self.prefix}.hooks",
@@ -790,7 +798,7 @@ class DatadogObserver(BaseObserver):
             tags=[f"event:{event.hook_event_name}"]
         )
 
-    def on_handler_end(self, event: ObservabilityEvent) -> None:
+    def on_handler_end(self, event: HookObservabilityEvent) -> None:
         # Track handler performance
         statsd.histogram(
             f"{self.prefix}.handler_duration_ms",
@@ -818,7 +826,7 @@ app.add_observer(DatadogObserver(prefix="myapp.hooks"))
 |--------|-------------------|---------------------|-----------|-----|
 | **Registration** | `@strategy.on_observe` | `@app.on_observe` + `add_observer()` | `callbacks=[handler]` param | Implicit via `ell.init(store=)` |
 | **Observer type** | Callback function only | Callback + BaseObserver class | BaseCallbackHandler class | Store interface only |
-| **Event model** | Dict-like events | Pydantic ObservabilityEvent | Separate params per method | Internal models |
+| **Event model** | Dict-like events | Pydantic HookObservabilityEvent | Separate params per method | Internal models |
 | **Third-party extensibility** | Limited (callbacks only) | **Good** (class-based protocol) | **Excellent** (mature ecosystem) | **Poor** (store-only) |
 | **Event filtering** | None | `@app.on_observe("handler_end")` | `ignore_*` properties | None |
 | **Async support** | Sync only | Fire-and-forget | Both sync + async handlers | Sync (internal) |
