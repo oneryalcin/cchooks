@@ -26,6 +26,7 @@ class StrategyMeta(BaseModel):
     hooks: list[str] = Field(default_factory=list)
     fail_mode: Literal["open", "closed"] = "open"
     custom_events: list[str] = Field(default_factory=list)
+    state_namespace: str | None = None  # Defaults to strategy name if None
 
 
 class Strategy(ABC):
@@ -66,6 +67,7 @@ class Strategy(ABC):
         hooks: list[str] = []
         fail_mode: Literal["open", "closed"] = "open"
         custom_events: list[str] = []
+        state_namespace: str | None = None  # Defaults to strategy name if None
 
     def __init__(self, **config: Any):
         """Initialize strategy with configuration.
@@ -256,6 +258,7 @@ class Strategy(ABC):
             hooks=getattr(self.Meta, "hooks", []),
             fail_mode=getattr(self.Meta, "fail_mode", "open"),
             custom_events=getattr(self.Meta, "custom_events", []),
+            state_namespace=getattr(self.Meta, "state_namespace", None),
         )
 
     @classmethod

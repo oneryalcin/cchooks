@@ -267,7 +267,8 @@ def _build_blueprint(self) -> Blueprint:
         state.save()
 
         # Transcript provides token stats
-        if transcript.stats.total_tokens > 100_000:
+        total = transcript.stats.input_tokens + transcript.stats.output_tokens
+        if total > 100_000:
             return allow(message="Token warning!")
 
     return bp
@@ -278,32 +279,40 @@ def _build_blueprint(self) -> Blueprint:
 Use `StrategyTestClient`:
 
 ```python
-from fasthooks.testing import StrategyTestClient, MockEvent
+from fasthooks.testing import StrategyTestClient
+from fasthooks.strategies import LongRunningStrategy
 
-def test_blocks_dangerous_command():
-    strategy = MyStrategy(blocked_commands=["rm -rf"])
+def test_blocks_on_uncommitted_changes():
+    strategy = LongRunningStrategy(enforce_commits=True)
     client = StrategyTestClient(strategy)
 
-    response = client.call_pre_tool(
-        MockEvent.bash(command="rm -rf /")
-    )
+    # Set up git with uncommitted changes
+    client.setup_git()
+    client.add_uncommitted("dirty.py")
+
+    # Trigger stop hook
+    client.trigger_session_start()  # Initialize state
+    response = client.trigger_stop()
 
     assert response is not None
-    assert response.decision == "deny"
+    client.assert_blocked("uncommitted")
 ```
 
 For strategies using `Transcript`:
 
 ```python
+from unittest.mock import Mock
+
 def test_with_transcript():
     client = StrategyTestClient(strategy)
 
-    # Mock transcript
+    # Mock transcript with token counts
     mock_transcript = Mock()
-    mock_transcript.stats.total_tokens = 150_000
+    mock_transcript.stats.input_tokens = 100_000
+    mock_transcript.stats.output_tokens = 50_000
     client.set_transcript(mock_transcript)
 
-    response = client.call_post_tool(MockEvent.bash())
+    response = client.trigger_post_bash(command="echo test")
     # ...
 ```
 

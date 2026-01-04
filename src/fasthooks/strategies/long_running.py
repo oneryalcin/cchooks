@@ -429,15 +429,19 @@ Continue with current task or pick next feature from {self.feature_list}.
         project_dir = Path(event.cwd)
         ns = state.get(self.Meta.name, {})
         issues = []
+        warnings = []
 
         # Check uncommitted changes
-        if self.enforce_commits:
-            uncommitted = self._check_uncommitted(project_dir)
-            if uncommitted:
-                files = ", ".join(uncommitted[:5])
-                if len(uncommitted) > 5:
-                    files += f" (+{len(uncommitted) - 5} more)"
-                issues.append(f"Uncommitted changes in: {files}")
+        uncommitted = self._check_uncommitted(project_dir)
+        if uncommitted:
+            files = ", ".join(uncommitted[:5])
+            if len(uncommitted) > 5:
+                files += f" (+{len(uncommitted) - 5} more)"
+            msg = f"Uncommitted changes in: {files}"
+            if self.enforce_commits:
+                issues.append(msg)
+            elif self.warn_uncommitted:
+                warnings.append(msg)
 
         # Check progress file updated
         if self.require_progress_update and not ns.get("progress_updated"):
@@ -446,6 +450,11 @@ Continue with current task or pick next feature from {self.feature_list}.
         if issues:
             return block(
                 "Cannot stop - please address:\n" + "\n".join(f"- {i}" for i in issues)
+            )
+
+        if warnings:
+            return allow(
+                message="⚠️ Warning:\n" + "\n".join(f"- {w}" for w in warnings)
             )
 
         return allow()
