@@ -1,4 +1,7 @@
-"""cchooks - Delightful Claude Code hooks."""
+"""fasthooks - Delightful Claude Code hooks."""
+
+__version__ = "0.1.3"
+
 from fasthooks.app import HookApp
 from fasthooks.blueprint import Blueprint
 from fasthooks.responses import (
@@ -15,6 +18,7 @@ from fasthooks.responses import (
 )
 
 __all__ = [
+    "__version__",
     "BaseHookResponse",
     "Blueprint",
     "ContextResponse",
