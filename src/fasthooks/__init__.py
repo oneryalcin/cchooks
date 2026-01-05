@@ -1,6 +1,6 @@
 """fasthooks - Delightful Claude Code hooks."""
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 from fasthooks.app import HookApp
 from fasthooks.blueprint import Blueprint
