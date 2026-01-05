@@ -9,9 +9,14 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from fasthooks.studio.connection_manager import ConnectionManager
 from fasthooks.transcript import Transcript
+
+# Static files directory (bundled frontend)
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 def create_app(db_path: Path) -> FastAPI:
@@ -347,5 +352,24 @@ def create_app(db_path: Path) -> FastAPI:
         await manager.broadcast(message)
 
     app.notify_clients = notify_clients  # type: ignore[attr-defined]
+
+    # Serve static frontend if bundled
+    if STATIC_DIR.exists() and (STATIC_DIR / "index.html").exists():
+        # Serve static assets (js, css, etc.)
+        app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+
+        # Catch-all for SPA routing - serve index.html
+        @app.get("/{path:path}")
+        async def serve_spa(path: str) -> FileResponse:
+            # Check if it's a static file
+            file_path = STATIC_DIR / path
+            if file_path.exists() and file_path.is_file():
+                return FileResponse(file_path)
+            # Otherwise serve index.html for SPA routing
+            return FileResponse(STATIC_DIR / "index.html")
+
+        @app.get("/")
+        async def serve_index() -> FileResponse:
+            return FileResponse(STATIC_DIR / "index.html")
 
     return app

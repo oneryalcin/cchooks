@@ -136,3 +136,65 @@ def status(
     from fasthooks.cli.commands.status import run_status
 
     raise typer.Exit(code=run_status(scope, console))
+
+
+@app.command()
+def studio(
+    db: Annotated[
+        str | None,
+        typer.Option(
+            "--db",
+            help="Path to studio.db (default: ~/.fasthooks/studio.db)",
+        ),
+    ] = None,
+    host: Annotated[
+        str,
+        typer.Option(
+            "--host",
+            help="Host to bind to",
+        ),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option(
+            "--port",
+            help="Port to bind to",
+        ),
+    ] = 5555,
+    open_browser: Annotated[
+        bool,
+        typer.Option(
+            "--open",
+            help="Open browser automatically",
+        ),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            help="Enable debug logging",
+        ),
+    ] = False,
+) -> None:
+    """Launch FastHooks Studio - visual debugger for hooks."""
+    try:
+        from fasthooks.studio.__main__ import main as studio_main
+    except ImportError:
+        console.print("[red]Studio requires extra dependencies.[/red]")
+        console.print("Install with: [bold]pip install fasthooks[studio][/bold]")
+        raise typer.Exit(1)
+
+    import sys
+
+    args = []
+    if db:
+        args.extend(["--db", db])
+    args.extend(["--host", host])
+    args.extend(["--port", str(port)])
+    if open_browser:
+        args.append("--open")
+    if verbose:
+        args.append("--verbose")
+
+    sys.argv = ["fasthooks-studio", *args]
+    studio_main()
