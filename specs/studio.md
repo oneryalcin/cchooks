@@ -1,7 +1,7 @@
 # Studio Spec
 
-**Status**: Backend Implemented, Frontend Pending
-**Date**: 2026-01-04
+**Status**: Implemented
+**Date**: 2026-01-05
 **Depends on**: `specs/observability.md` (implemented)
 
 ---
@@ -889,8 +889,8 @@ function DecisionBadge({ decision }: { decision: string }) {
 2. ~~**Verify data**~~ ✅ Sample data in `specs/studio/samples/`
 3. ~~**Studio server**~~ ✅ FastAPI with conversation endpoint
 4. ~~**File watcher**~~ ✅ Poll DB every 500ms, WebSocket broadcast
-5. **Studio frontend** - React conversation view ← NEXT
-6. **CLI command** - `fasthooks studio`
+5. ~~**Studio frontend**~~ ✅ React conversation view in `studio-frontend/`
+6. ~~**CLI command**~~ ✅ `fasthooks studio` runs server + serves bundled frontend
 7. ~~**Packaging**~~ ✅ `pip install fasthooks[studio]`
 
 ---
