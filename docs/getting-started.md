@@ -22,6 +22,14 @@ Get your first Claude Code hook running in 5 minutes.
     pip install fasthooks
     ```
 
+!!! tip "Want visual debugging?"
+    Install with the studio extra to get `fasthooks studio`:
+    ```bash
+    pip install fasthooks[studio]
+    # or
+    uv add fasthooks[studio]
+    ```
+
 ## Step 2: Create a hooks file
 
 ```bash
@@ -175,5 +183,7 @@ Teammates will get the hooks automatically when they pull.
 - [Events](tutorial/events.md) - Learn about different event types (`Bash`, `Write`, `Edit`, etc.)
 - [Responses](tutorial/responses.md) - Understand `allow()`, `deny()`, `block()`
 - [Dependency Injection](tutorial/dependencies.md) - Access `Transcript` and `State`
+- [Observability](observability.md) - Trace hook events for debugging
+- [Studio](studio.md) - Visual debugger with conversation view
 - [CLI Reference](cli.md) - All CLI commands and options
 - [Testing](tutorial/testing.md) - Write tests for your hooks

@@ -28,7 +28,7 @@ class TestCLIHelp:
         )
         assert result.returncode == 0
         assert "fasthooks" in result.stdout
-        assert "0.1.3" in result.stdout
+        assert "0.1.4" in result.stdout
 
 
 class TestInitCommand:

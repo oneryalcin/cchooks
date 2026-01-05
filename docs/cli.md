@@ -235,6 +235,88 @@ fasthooks status --scope project
 
 ---
 
+### fasthooks studio
+
+Launch the visual debugging UI for hooks. See exactly what your hooks receive, how they respond, and debug issues in real-time.
+
+```bash
+fasthooks studio [--db PATH] [--host HOST] [--port PORT] [--open] [--verbose]
+```
+
+!!! note "Requires Extra"
+    Studio requires additional dependencies. Install with:
+    ```bash
+    pip install fasthooks[studio]
+    ```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--db` | `~/.fasthooks/studio.db` | Path to SQLite database |
+| `--host` | `127.0.0.1` | Host to bind server to |
+| `--port` | `5555` | Port to bind server to |
+| `--open` | `false` | Open browser automatically |
+| `--verbose` | `false` | Enable debug logging |
+
+**Example:**
+
+```bash
+# Start studio (opens at http://localhost:5555)
+fasthooks studio
+
+# Open browser automatically
+fasthooks studio --open
+
+# Use custom port
+fasthooks studio --port 8080
+
+# Point to specific database
+fasthooks studio --db /path/to/studio.db
+```
+
+**What you see:**
+
+The studio shows a conversation view similar to Claude Code's TUI, but with **hook events inline**:
+
+```
+👤 User: "check the logs"
+
+🧠 Thinking: "Let me look at the log files..."
+
+🔧 Bash(tail -f /var/log/app.log)
+   ┌─ PreToolUse hooks ─────────────────────────────┐
+   │  check_paths  → ✅ allow   0.3ms              │
+   │  log_all      → ✅ allow   0.1ms              │
+   │  Total: 12.5ms                                 │
+   └────────────────────────────────────────────────┘
+
+📥 [log output here...]
+```
+
+**Setting up observability:**
+
+For studio to capture hook events, add `SQLiteObserver` to your hooks:
+
+```python
+from fasthooks import HookApp
+from fasthooks.observability import SQLiteObserver
+
+app = HookApp()
+app.add_observer(SQLiteObserver())  # Writes to ~/.fasthooks/studio.db
+
+@app.pre_tool("Bash")
+def check_bash(event):
+    # Your handler logic
+    pass
+
+app.run()
+```
+
+See the [Observability Guide](observability.md) for more details.
+
+---
+
 ## Scopes
 
 fasthooks supports three installation scopes:
@@ -394,6 +476,7 @@ fasthooks init --help
 fasthooks install --help
 fasthooks uninstall --help
 fasthooks status --help
+fasthooks studio --help
 
 # Show version
 fasthooks --version

@@ -3,10 +3,57 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+# =============================================================================
+# HookApp Observability Events
+# =============================================================================
+
+
+class HookObservabilityEvent(BaseModel):
+    """Event emitted by HookApp observability system.
+
+    Passed to observers. Immutable by convention (don't mutate).
+    Use .model_dump() for raw dict access.
+    """
+
+    # Identity
+    event_type: str  # hook_start, handler_end, etc.
+    hook_id: str  # UUID for this hook invocation
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    # Context
+    session_id: str  # From Claude Code input
+    hook_event_name: str  # PreToolUse, PostToolUse, Stop, etc.
+    tool_name: str | None = None  # Bash, Write, etc. (None for Stop/lifecycle)
+    handler_name: str | None = None  # Function name (None for hook-level events)
+
+    # Timing (for *_end events only)
+    duration_ms: float | None = None  # Handler execution time (excludes DI)
+
+    # Decision (for handler_end, hook_end)
+    decision: str | None = None  # "allow", "deny", "block"
+    reason: str | None = None  # Denial reason if any
+
+    # Content (truncated)
+    input_preview: str | None = None  # First 4096 chars of hook input JSON
+
+    # Error (for *_error events only)
+    error_type: str | None = None  # Exception class name
+    error_message: str | None = None  # str(exception)
+
+    # Skip info (for handler_skip only)
+    skip_reason: str | None = None  # "early deny from {handler}", "guard failed"
+
+    model_config = {"ser_json_timedelta": "iso8601"}
+
+
+# =============================================================================
+# Strategy Observability Events (existing)
+# =============================================================================
 
 
 class ObservabilityEvent(BaseModel):
