@@ -39,6 +39,8 @@ if __name__ == "__main__":
 - **Middleware** - Cross-cutting concerns like timing and logging
 - **Guards** - `@app.pre_tool("Bash", when=lambda e: "sudo" in e.command)`
 - **Testing utilities** - `MockEvent` and `TestClient` for easy testing
+- **Observability** - Trace hook events with `FileObserver`, `SQLiteObserver`, or custom observers
+- **Visual debugger** - `fasthooks studio` shows hook events inline with Claude's conversation
 
 ## Installation
 
@@ -46,12 +48,18 @@ if __name__ == "__main__":
 
     ```bash
     pip install fasthooks
+
+    # With visual debugger (studio)
+    pip install fasthooks[studio]
     ```
 
 === "uv"
 
     ```bash
     uv add fasthooks
+
+    # With visual debugger (studio)
+    uv add fasthooks[studio]
     ```
 
 ## Quick Example
@@ -104,4 +112,6 @@ fasthooks gives you a **FastAPI-like experience**:
 
 - [Getting Started](getting-started.md) - Set up your first hook in 5 minutes
 - [Tutorial](tutorial/index.md) - Learn fasthooks step by step
-- [CLI Reference](cli.md) - `init`, `install`, `uninstall`, `status` commands
+- [Observability](observability.md) - Trace and debug hook events
+- [Studio](studio.md) - Visual debugger for hooks
+- [CLI Reference](cli.md) - `init`, `install`, `uninstall`, `status`, `studio` commands

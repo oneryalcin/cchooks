@@ -37,6 +37,8 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Observability: observability.md
+  - Studio: studio.md
   - Tutorial:
       - tutorial/index.md
       - Events: tutorial/events.md
