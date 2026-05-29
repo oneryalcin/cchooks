@@ -7,9 +7,15 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from fasthooks.transcript.entries import (
         TranscriptEntry,
     )
+
+    # An operation in the query chain: transforms a list of entries into a
+    # filtered/ordered list of entries.
+    EntryOp = Callable[[list[TranscriptEntry]], list[TranscriptEntry]]
 
 T = TypeVar("T", bound="TranscriptEntry")
 
@@ -60,9 +66,9 @@ class TranscriptQuery:
             entries: List of transcript entries to query
         """
         self._source = entries
-        self._ops: list[tuple[str, Callable[[list], list]]] = []
+        self._ops: list[tuple[str, EntryOp]] = []
 
-    def _clone(self, name: str, op: Callable[[list], list]) -> TranscriptQuery:
+    def _clone(self, name: str, op: EntryOp) -> TranscriptQuery:
         """Create a copy with an additional operation."""
         new = TranscriptQuery(self._source)
         new._ops = self._ops + [(name, op)]
@@ -192,7 +198,7 @@ class TranscriptQuery:
             f"since({ts.isoformat()})",
             lambda entries: [
                 e for e in entries
-                if getattr(e, "timestamp", None) and e.timestamp >= ts
+                if (t := getattr(e, "timestamp", None)) is not None and t >= ts
             ],
         )
 
@@ -211,7 +217,7 @@ class TranscriptQuery:
             f"until({ts.isoformat()})",
             lambda entries: [
                 e for e in entries
-                if getattr(e, "timestamp", None) and e.timestamp <= ts
+                if (t := getattr(e, "timestamp", None)) is not None and t <= ts
             ],
         )
 
@@ -237,13 +243,17 @@ class TranscriptQuery:
             val = getattr(x, k, None)
             return val if val is not None else ""
 
-        def op(entries: list) -> list:
+        def op(entries: list[TranscriptEntry]) -> list[TranscriptEntry]:
             result = list(entries)
             for field in reversed(fields):
                 reverse = field.startswith("-")
                 attr = field.lstrip("-")
+
                 # Capture attr by value (k=attr) to avoid closure bug
-                result.sort(key=lambda x, k=attr: _sort_key(x, k), reverse=reverse)
+                def key_fn(x: TranscriptEntry, k: str = attr) -> Any:
+                    return _sort_key(x, k)
+
+                result.sort(key=key_fn, reverse=reverse)
             return result
 
         return self._clone(f"order_by({', '.join(fields)})", op)
@@ -340,7 +350,7 @@ class TranscriptQuery:
 
         # Apply lookup
         if lookup == "exact":
-            return field_val == value
+            return bool(field_val == value)
         elif lookup == "contains":
             if field_val is None:
                 return False
@@ -368,7 +378,7 @@ class TranscriptQuery:
         elif lookup == "lte":
             return field_val is not None and field_val <= value
         elif lookup == "isnull":
-            return (field_val is None) == value
+            return (field_val is None) == bool(value)
 
         return False
 
@@ -380,7 +390,7 @@ class TranscriptQuery:
 
     # === Iteration ===
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[TranscriptEntry]:
         """Iterate over results."""
         return iter(self.all())
 

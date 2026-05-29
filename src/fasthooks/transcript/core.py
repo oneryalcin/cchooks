@@ -217,7 +217,7 @@ class Transcript:
             include_archived = self.include_archived
         return self._archived + self.entries if include_archived else self.entries
 
-    def _filter_meta(self, entry: Entry) -> bool:
+    def _filter_meta(self, entry: TranscriptEntry) -> bool:
         """Check if entry should be included based on meta/visibility settings."""
         if self.include_meta:
             return True

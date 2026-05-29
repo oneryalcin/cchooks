@@ -347,11 +347,12 @@ def create_app(db_path: Path) -> FastAPI:
             "avg_handler_duration_ms": avg_duration,
         }
 
-    # Attach notify_clients to app for file watcher
+    # Expose notify_clients to the file watcher via app.state (Starlette's
+    # app-scoped state bag) rather than monkey-patching the app object.
     async def notify_clients(message: str) -> None:
         await manager.broadcast(message)
 
-    app.notify_clients = notify_clients
+    app.state.notify_clients = notify_clients
 
     # Serve static frontend if bundled
     if STATIC_DIR.exists() and (STATIC_DIR / "index.html").exists():
