@@ -328,6 +328,18 @@ Implement the recipe contract with **one** recipe chosen for being the cleanest 
 
 ---
 
+# Invisible lifecycle: `fasthooks serve --reload`
+
+> **STATUS: DONE.** Closes the Phase-2 "invisible lifecycle deferred" caveat.
+> - **`fasthooks serve <path> --reload`** runs uvicorn's native auto-reload via an import-string factory (`_reload_asgi_factory`) that rebuilds the HookApp from the hooks file — re-running `include_recipes` — on every change. So editing a handler or `fasthooks add`-ing a recipe is picked up **with no manual restart**. Needs `fasthooks[reload]` (adds `watchfiles`).
+> - Reload watches the hooks file's directory (recursively, so `.claude/hooks/recipes` is covered) plus the recipes dir. The factory reads config from the env (the reloader runs in a fresh subprocess); the non-loopback fail-closed check is mirrored in the reload path.
+> - **Verified end-to-end:** started `serve --reload`, `AGENT_STOP` → deny; edited the recipe's sentinel to `STOP2` with no restart → `WatchFiles detected changes... Reloading...`, after which `AGENT_STOP` no longer triggered and `STOP2` did. (Also confirms the PreToolUse `hookSpecificOutput` output live.)
+> - 641/641 pass, mypy + ruff clean. Factory has a unit test; reload behavior verified manually (long-running, not in pytest).
+>
+> With this, the server tier's lifecycle is genuinely invisible: `install --http` once (settings stable forever), `serve --reload` once, then iterate on handlers/recipes freely — no settings edits, no Claude Code restarts, no server restarts.
+
+---
+
 ### Explicitly OUT of the minimal slice (name it, so scope can't creep)
 
 Defer until the slice above is consumed and proven:

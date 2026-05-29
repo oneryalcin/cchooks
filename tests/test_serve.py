@@ -189,6 +189,28 @@ def test_serve_refuses_non_loopback_without_token(monkeypatch):
         app.serve(host="0.0.0.0")
 
 
+def test_reload_factory_rebuilds_app_from_env(tmp_path, monkeypatch):
+    """The reload factory loads the hooks file fresh and applies the token —
+    this is what lets uvicorn --reload pick up edits without a restart."""
+    hooks = tmp_path / "h.py"
+    hooks.write_text(
+        "from fasthooks import HookApp\n"
+        "app = HookApp()\n"
+        "@app.pre_tool('Bash')\n"
+        "def c(event):\n"
+        "    return None\n"
+    )
+    monkeypatch.setenv("FASTHOOKS_HOOKS_PATH", str(hooks))
+    monkeypatch.setenv("FASTHOOKS_TOKEN", "abc")
+
+    from fasthooks.cli.commands.serve import _reload_asgi_factory
+
+    asgi = _reload_asgi_factory()
+    rebuilt_app = asgi.__self__  # bound method -> the HookApp
+    assert rebuilt_app._auth_token == "abc"
+    assert "Bash" in rebuilt_app._pre_tool_handlers
+
+
 def test_serve_handles_lifespan():
     app = HookApp()
     events = iter(["lifespan.startup", "lifespan.shutdown"])

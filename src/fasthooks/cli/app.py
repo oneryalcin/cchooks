@@ -213,6 +213,13 @@ def serve(
             help="Permit a non-loopback bind with no token (unsafe)",
         ),
     ] = False,
+    reload: Annotated[
+        bool,
+        typer.Option(
+            "--reload",
+            help="Auto-reload on handler/recipe changes (needs fasthooks[reload])",
+        ),
+    ] = False,
 ) -> None:
     """Run hooks as a persistent HTTP server (Claude Code http hook)."""
     from fasthooks.cli.commands.serve import run_serve
@@ -225,6 +232,7 @@ def serve(
             console,
             token=token,
             allow_unauthenticated=allow_unauthenticated,
+            reload=reload,
         )
     )
 
