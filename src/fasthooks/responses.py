@@ -50,6 +50,8 @@ class HookResponse(BaseHookResponse):
     message: str | None = None
     interrupt: bool = False
     continue_: bool = True
+    stop_reason: str | None = None
+    additional_context: str | None = None
 
     def to_json(self, hook_event_name: str | None = None) -> str:
         """Serialize to Claude Code expected JSON format."""
@@ -75,6 +77,8 @@ class HookResponse(BaseHookResponse):
                 hso["permissionDecisionReason"] = self.reason
             if self.modify:
                 hso["updatedInput"] = self.modify
+            if self.additional_context:
+                hso["additionalContext"] = self.additional_context
             if len(hso) > 1:  # more than just hookEventName
                 output["hookSpecificOutput"] = hso
         else:
@@ -86,21 +90,32 @@ class HookResponse(BaseHookResponse):
                 output["decision"] = self.decision
                 if self.reason:
                     output["reason"] = self.reason
+            hso_else: dict[str, Any] = {}
             if self.modify:
-                output["hookSpecificOutput"] = {"updatedInput": self.modify}
+                hso_else["updatedInput"] = self.modify
+            if self.additional_context:
+                # hookSpecificOutput requires hookEventName off PreToolUse.
+                hso_else["hookEventName"] = hook_event_name
+                hso_else["additionalContext"] = self.additional_context
+            if hso_else:
+                output["hookSpecificOutput"] = hso_else
 
         if self.message:
             output["systemMessage"] = self.message
-        if not self.continue_:
+        if not self.continue_ or self.interrupt:
             output["continue"] = False
-        if self.interrupt:
-            output["continue"] = False
+            if self.stop_reason:
+                output["stopReason"] = self.stop_reason
 
         return json.dumps(output) if output else ""
 
     def should_return(self) -> bool:
-        """Only deny/block short-circuit the handler chain."""
-        return self.decision in ("deny", "block")
+        """deny/block, or a halt (continue=False), short-circuit the chain.
+
+        continue=False takes precedence over event-specific decisions, so it
+        must be terminal — otherwise a later handler could overwrite the halt.
+        """
+        return self.decision in ("deny", "block") or not self.continue_
 
     def carries_output(self) -> bool:
         """True when this response emits something beyond a bare allow.
@@ -113,37 +128,61 @@ class HookResponse(BaseHookResponse):
             self.decision in ("deny", "block", "ask")
             or self.modify
             or self.message
+            or self.additional_context
             or self.interrupt
             or not self.continue_
         )
 
 
 def allow(
-    *, modify: dict[str, Any] | None = None, message: str | None = None
+    *,
+    modify: dict[str, Any] | None = None,
+    message: str | None = None,
+    additional_context: str | None = None,
 ) -> HookResponse:
     """Allow the action to proceed.
 
     Args:
         modify: Optional dict to modify tool input before execution
         message: Optional message shown to user
+        additional_context: Optional text injected into Claude's context
+            alongside the tool result (PreToolUse/PostToolUse). For a bare
+            context injection on any event, prefer :func:`context`.
 
     Returns:
         HookResponse with approve decision
     """
-    return HookResponse(decision="approve", modify=modify, message=message)
+    return HookResponse(
+        decision="approve",
+        modify=modify,
+        message=message,
+        additional_context=additional_context,
+    )
 
 
-def deny(reason: str, *, interrupt: bool = False) -> HookResponse:
+def deny(
+    reason: str,
+    *,
+    interrupt: bool = False,
+    additional_context: str | None = None,
+) -> HookResponse:
     """Deny/block the action.
 
     Args:
         reason: Explanation shown to Claude
         interrupt: If True, stops Claude entirely
+        additional_context: Optional extra context injected for Claude
+            alongside the denial (PreToolUse/PostToolUse).
 
     Returns:
         HookResponse with deny decision
     """
-    return HookResponse(decision="deny", reason=reason, interrupt=interrupt)
+    return HookResponse(
+        decision="deny",
+        reason=reason,
+        interrupt=interrupt,
+        additional_context=additional_context,
+    )
 
 
 def block(reason: str) -> HookResponse:
@@ -178,6 +217,23 @@ def ask(reason: str, *, modify: dict[str, Any] | None = None) -> HookResponse:
         HookResponse with ask decision
     """
     return HookResponse(decision="ask", reason=reason, modify=modify)
+
+
+def halt(reason: str) -> HookResponse:
+    """Stop Claude entirely (``continue: false``) with a message to the user.
+
+    Works on any event and takes precedence over event-specific decisions:
+    ``continue: false`` ends the turn. ``reason`` is the ``stopReason`` shown to
+    the user (not Claude). This is terminal — it short-circuits the handler
+    chain so a later handler can't override the halt.
+
+    Args:
+        reason: Message shown to the user explaining why Claude stopped.
+
+    Returns:
+        HookResponse that ends the turn.
+    """
+    return HookResponse(continue_=False, stop_reason=reason)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

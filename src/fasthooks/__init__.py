@@ -18,6 +18,7 @@ from fasthooks.responses import (
     context,
     deny,
     deny_permission,
+    halt,
 )
 
 __all__ = [
@@ -39,4 +40,5 @@ __all__ = [
     "context",
     "deny",
     "deny_permission",
+    "halt",
 ]

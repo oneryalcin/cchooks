@@ -119,16 +119,18 @@ A handler returns a response to influence Claude Code, or returns nothing to
 stay out of the way.
 
 ```python
-from fasthooks import allow, deny, block, ask, approve_permission, deny_permission
+from fasthooks import allow, deny, block, ask, halt, context
 
 return None                                 # Pass / no opinion (the common case)
 return deny("Reason shown to Claude")       # Block a tool (PreToolUse)
 return block("Continue working on X")       # Don't stop yet (Stop/SubagentStop)
 return ask("Confirm this command?")         # Escalate to the user (PreToolUse)
+return halt("Build broken, fix it first")   # Stop Claude entirely (any event)
 
 return allow()                              # Same as `return None` (no-op)
 return allow(message="note")                # Allow, but show a message
 return allow(modify={"command": "safe ls"}) # Allow with rewritten tool input
+return allow(additional_context="env=prod") # Allow + inject context for Claude
 
 # PermissionRequest hooks (a *different* response shape — see below)
 return approve_permission()                 # Allow the permission
@@ -149,6 +151,15 @@ different hook shapes. Regular tool hooks (`PreToolUse`, …) use `allow`/`deny`
 the separate `PermissionRequest` hook uses `approve_permission`/`deny_permission`.
 The verbs differ because Claude Code's protocol uses a different field vocabulary
 for each — fasthooks mirrors the wire shapes rather than papering over them.
+
+**Injecting context** — `context(text, hook_event=...)` injects text into Claude's
+context window and works on *any* event (`SessionStart`, `UserPromptSubmit`,
+`PreToolUse`, `PostToolUse`, …). To attach context *to a decision* in one response,
+pass `additional_context=` to `allow()`/`deny()`.
+
+**`halt()`** stops Claude entirely (`continue: false`) with a message to the user.
+It works on any event and takes precedence over other decisions — use it for
+"something is broken, don't continue."
 
 ### Tool Decorators
 

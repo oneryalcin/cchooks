@@ -83,10 +83,10 @@ Legend: ✅ typed model + decorator · ⚙️ via `@app.on()` only (no typed mod
 |-----|------|-----------------|----------|
 | ~~`permissionDecision: "ask"`~~ | PreToolUse decision control | ✅ **done** — `ask(reason, modify=)` builder | — |
 | `permissionDecision: "defer"` | PreToolUse, "Defer a tool call" | unsupported | LOW — headless/SDK-resume niche |
-| `stopReason` (with `continue: false`) | JSON output universal fields | `continue_`/`interrupt` but no `stopReason` | MED |
+| ~~`stopReason` (with `continue: false`)~~ | JSON output universal fields | ✅ **done** — `halt(reason)` builder + `stop_reason` field | — |
 | `updatedPermissions` | PermissionRequest decision control | unsupported | LOW — addRules/setMode entries |
 | SessionStart extras: `initialUserMessage`, `watchPaths`, `sessionTitle`, `reloadSkills` | SessionStart decision control | only `additionalContext` | LOW/MED |
-| `additionalContext` on tool events | PreToolUse/PostToolUse | `context()` only targets SessionStart/UserPromptSubmit | MED |
+| ~~`additionalContext` on tool events~~ | PreToolUse/PostToolUse | ✅ **done** — `context()` works on any event; `allow/deny(additional_context=)` to combine with a decision | — |
 | `suppressOutput`, `terminalSequence` | JSON output universal fields | unmodeled | LOW |
 | `PermissionDenied` → `retry: true` | PermissionDenied | unsupported (event also untyped) | LOW |
 
@@ -100,8 +100,9 @@ Legend: ✅ typed model + decorator · ⚙️ via `@app.on()` only (no typed mod
 2. ~~**Typed `PostToolUseFailure`**~~ — ✅ **done.** `@app.post_tool_failure(*tools)`
    decorator + `ToolFailureEvent` (`.error`, `.is_interrupt`, `.duration_ms`). Fails
    open on a handler crash (the tool already failed; nothing to block).
-3. **`stopReason`** on `HookResponse` (alongside `continue=False`) and **`additionalContext`
-   on PreToolUse/PostToolUse** via `context()`/`allow()`.
+3. ~~**`stopReason`** + **`additionalContext` on tool events**~~ — ✅ **done.**
+   `halt(reason)` (continue:false + stopReason, terminal); `allow/deny(additional_context=)`
+   and `context()` on any event.
 4. Type the next tranche of agentic-loop events (`PostToolBatch`, `PermissionDenied`
    with `retry`, `SubagentStart`).
 5. Advanced/niche: `updatedPermissions`, SessionStart extras, `defer`, `terminalSequence`.
