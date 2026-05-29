@@ -302,8 +302,18 @@ Implement the recipe contract with **one** recipe chosen for being the cleanest 
 > - **`fasthooks install <path> --http [--host --port]`** writes `{"type":"http","url":...}` entries into settings.json instead of the `uv run` command — so "restart Claude Code once → works" no longer needs a manual edit. The identity used for dedup/uninstall/status generalized from "command string" to **command-*or*-url** (`hook_identity`), so the merge/lock/remove machinery works for both transports. Verified end-to-end: install → reinstall `--force` (dedups, no duplicate) → uninstall (removes by url, deletes lock).
 > - **Codex round-3 findings, triaged:**
 >   - *[P2 standard] Generic-tool-event coverage collapsed at install time.* `@app.on("PreToolUse")` beside `@app.pre_tool("Bash")` introspected to `['PreToolUse:Bash','PreToolUse']` and `generate_settings` kept only the `Bash` matcher — so Claude Code would never deliver Edit/Write/etc. to the catch-all, even though `_dispatch` handles them. **Fixed:** a bare registration of a tool-capable event (`PreToolUse`/`PostToolUse`/`PostToolUseFailure`/`PermissionRequest`/`PermissionDenied`) now installs as a `*` matcher. Regression tests added. A genuine install-vs-dispatch divergence the review caught.
->   - *[HIGH adversarial] Unauthenticated endpoint — escalated, decision pending.* The reviewer escalated the Phase-2 auth finding to no-ship and tied the fix to the generated config (a shared-secret token surfaced in the http hook `headers`). This is now the active decision: implement the token (secure-by-default `install --http`) vs. keep the documented cheap-defenses posture. Tracked; not yet actioned.
+>   - *[HIGH adversarial] Unauthenticated endpoint — escalated, now FIXED with a shared-secret token.* The reviewer escalated the Phase-2 auth finding to no-ship (loopback isn't a real boundary — a local process or a browser page can POST to localhost) and tied the fix to the generated config.
 > - 629/629 pass, mypy clean (my files; ~33 pre-existing transitive errors in `strategies/` etc. remain and are not mine), ruff clean.
+
+---
+
+# Auth: shared-secret token for the http transport
+
+> **STATUS: DONE.** Closes the escalated [HIGH] adversarial finding.
+> - **`serve(token=...)`** (or `$FASTHOOKS_TOKEN`, or `serve --token`): when set, `_asgi_app` requires `Authorization: Bearer <token>` and rejects missing/invalid with **401 before reading or dispatching the body** (constant-time `hmac.compare_digest`), so a forged request never reaches handler code. No token → current open behavior (loopback default); a non-loopback bind *without* a token now warns harder.
+> - **`fasthooks install --http --auth`** generates a 32-byte URL-safe secret, emits `headers: {Authorization: "Bearer ${FASTHOOKS_TOKEN}"}` + `allowedEnvVars: ["FASTHOOKS_TOKEN"]` into the hook config (Claude Code's native env-interpolation), and **prints the secret once for you to export** — the secret itself is never written to settings.json. Both Claude Code and the server read `FASTHOOKS_TOKEN` from the environment, so they share the secret without it touching disk.
+> - **Verified** through unit tests (valid/missing/invalid token → dispatch/401/401; config has the env-ref header, not the secret) *and* a live server (`FASTHOOKS_TOKEN=… serve` → curl: no token 401, bad token 401, good token dispatched). 632/632 pass, mypy + ruff clean.
+> - Chosen posture: token is **opt-in** (default stays loopback-open for the zero-config local case). Refusing non-loopback binds without a token was offered but not chosen — the hard warning covers it.
 
 ---
 

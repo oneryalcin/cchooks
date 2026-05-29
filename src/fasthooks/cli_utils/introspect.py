@@ -20,7 +20,11 @@ _TOOL_EVENTS = frozenset(
 
 
 def generate_settings(
-    hooks: list[str], command: str, *, hook_type: str = "command"
+    hooks: list[str],
+    command: str,
+    *,
+    hook_type: str = "command",
+    auth_env: str | None = None,
 ) -> dict[str, Any]:
     """
     Generate settings.json hooks configuration.
@@ -34,6 +38,11 @@ def generate_settings(
             is the shell command (e.g. 'uv run --with fasthooks "..."'); for
             ``hook_type="http"`` it is the endpoint URL.
         hook_type: "command" (default) or "http".
+        auth_env: For http hooks, the name of an env var holding the shared
+            secret. When set, each entry gets an ``Authorization: Bearer``
+            header referencing it (via Claude Code's ``${VAR}`` interpolation)
+            plus ``allowedEnvVars`` — so the secret stays in the environment,
+            never in settings.json.
 
     Returns:
         Dict ready to merge into settings.json
@@ -44,9 +53,13 @@ def generate_settings(
     """
     settings: dict[str, Any] = {"hooks": {}}
 
-    def _entry() -> dict[str, str]:
+    def _entry() -> dict[str, Any]:
         if hook_type == "http":
-            return {"type": "http", "url": command}
+            entry: dict[str, Any] = {"type": "http", "url": command}
+            if auth_env:
+                entry["headers"] = {"Authorization": f"Bearer ${{{auth_env}}}"}
+                entry["allowedEnvVars"] = [auth_env]
+            return entry
         return {"type": "command", "command": command}
 
     # Group hooks by event type

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -34,6 +35,7 @@ def run_install(
     http: bool = False,
     host: str = "127.0.0.1",
     port: int = 8765,
+    auth: bool = False,
 ) -> int:
     """
     Install hooks to Claude Code settings.
@@ -47,6 +49,9 @@ def run_install(
             endpoint instead of a per-call ``command`` hook.
         host: Server host for http mode.
         port: Server port for http mode.
+        auth: Generate a shared secret and require it on every request (http
+            mode only). The config references ``$FASTHOOKS_TOKEN``; the secret
+            itself is printed once for you to export, never written to settings.
 
     Returns:
         Exit code (0=success, 1=error, 2=validation error)
@@ -100,13 +105,20 @@ def run_install(
 
     # Step 7: Generate the hook's identity (command string, or http url)
     hook_type = "http" if http else "command"
+    auth_env: str | None = None
+    secret: str | None = None
     if http:
         command = f"http://{host}:{port}/"
+        if auth:
+            auth_env = "FASTHOOKS_TOKEN"
+            secret = secrets.token_urlsafe(32)
     else:
         command = make_relative_command(hooks_resolved, project_root)
 
     # Step 8: Generate settings
-    new_config = generate_settings(hooks, command, hook_type=hook_type)
+    new_config = generate_settings(
+        hooks, command, hook_type=hook_type, auth_env=auth_env
+    )
 
     # Step 9: Backup existing settings
     settings_path = get_settings_path(scope, project_root)
@@ -179,9 +191,17 @@ def run_install(
     # Step 12: Print activation reminder
     console.print()
     if http:
+        auth_block = ""
+        if secret:
+            auth_block = (
+                "\n\n[bold]Auth enabled.[/bold] Export this secret — both Claude "
+                "Code and the server read it (it is NOT stored in settings):\n"
+                f"  [bold]export {auth_env}={secret}[/bold]"
+            )
         console.print(
             Panel(
-                f"Registered an [bold]http[/bold] hook at [bold]{command}[/bold].\n\n"
+                f"Registered an [bold]http[/bold] hook at [bold]{command}[/bold]."
+                f"{auth_block}\n\n"
                 "Start the server (it must be running for hooks to fire):\n"
                 f"  [bold]fasthooks serve {path} --host {host} --port {port}[/bold]\n\n"
                 "Then restart Claude Code once to pick up the new settings.\n"

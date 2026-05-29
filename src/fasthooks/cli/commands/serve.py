@@ -42,7 +42,9 @@ def _load_app(path: Path) -> HookApp | None:
     return None
 
 
-def run_serve(path: str, host: str, port: int, console: Console) -> int:
+def run_serve(
+    path: str, host: str, port: int, console: Console, *, token: str | None = None
+) -> int:
     """Run a hooks file as a persistent HTTP server.
 
     Args:
@@ -88,7 +90,7 @@ def run_serve(path: str, host: str, port: int, console: Console) -> int:
     )
 
     try:
-        hook_app.serve(host=host, port=port)
+        hook_app.serve(host=host, port=port, token=token)
     except KeyboardInterrupt:
         console.print("\n[dim]Stopped.[/dim]")
     return 0

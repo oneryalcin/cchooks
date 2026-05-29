@@ -112,12 +112,21 @@ def install(
         int,
         typer.Option("--port", help="Server port for --http"),
     ] = 8765,
+    auth: Annotated[
+        bool,
+        typer.Option(
+            "--auth",
+            help="Generate a shared secret and require it (http mode only)",
+        ),
+    ] = False,
 ) -> None:
     """Register hooks with Claude Code."""
     from fasthooks.cli.commands.install import run_install
 
     raise typer.Exit(
-        code=run_install(path, scope, force, console, http=http, host=host, port=port)
+        code=run_install(
+            path, scope, force, console, http=http, host=host, port=port, auth=auth
+        )
     )
 
 
@@ -190,11 +199,18 @@ def serve(
         int,
         typer.Option("--port", help="Port to bind to"),
     ] = 8765,
+    token: Annotated[
+        str | None,
+        typer.Option(
+            "--token",
+            help="Require this shared secret (defaults to $FASTHOOKS_TOKEN)",
+        ),
+    ] = None,
 ) -> None:
     """Run hooks as a persistent HTTP server (Claude Code http hook)."""
     from fasthooks.cli.commands.serve import run_serve
 
-    raise typer.Exit(code=run_serve(path, host, port, console))
+    raise typer.Exit(code=run_serve(path, host, port, console, token=token))
 
 
 @app.command()

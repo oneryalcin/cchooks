@@ -14,9 +14,11 @@ import anyio
 from fasthooks import HookApp, deny
 
 
-def _drive(app: HookApp, body: bytes) -> tuple[int, bytes]:
+def _drive(
+    app: HookApp, body: bytes, *, headers: list | None = None
+) -> tuple[int, bytes]:
     """Send one HTTP request body through the ASGI app; return (status, body)."""
-    scope = {"type": "http", "method": "POST", "path": "/", "headers": []}
+    scope = {"type": "http", "method": "POST", "path": "/", "headers": headers or []}
     sent: list[dict] = []
 
     async def receive():
@@ -130,6 +132,42 @@ def test_serve_preserves_log_dir_audit_trail(tmp_path):
     assert log_file.exists()
     logged = json.loads(log_file.read_text().strip())
     assert logged["event"] == "PreToolUse"
+
+
+def test_serve_token_required_when_set():
+    """With a token configured, only requests bearing it are dispatched."""
+    app = HookApp()
+    app._auth_token = "s3cret"
+
+    @app.pre_tool("Bash")
+    def guard(event):
+        if "rm -rf /" in event.command:
+            return deny("blocked")
+
+    body = _payload(tool_input={"command": "rm -rf /"})
+
+    # No header -> 401, handler never runs
+    assert _drive(app, body)[0] == 401
+    # Wrong token -> 401
+    assert _drive(app, body, headers=[(b"authorization", b"Bearer nope")])[0] == 401
+    # Correct token -> dispatched
+    status, out = _drive(app, body, headers=[(b"authorization", b"Bearer s3cret")])
+    assert status == 200
+    assert json.loads(out)["decision"] == "deny"
+
+
+def test_serve_no_token_means_open():
+    """Without a token, requests are dispatched (current default)."""
+    app = HookApp()
+
+    @app.pre_tool("Bash")
+    def guard(event):
+        if "rm -rf /" in event.command:
+            return deny("blocked")
+
+    status, out = _drive(app, _payload(tool_input={"command": "rm -rf /"}))
+    assert status == 200
+    assert json.loads(out)["decision"] == "deny"
 
 
 def test_serve_handles_lifespan():

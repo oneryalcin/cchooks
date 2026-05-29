@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import functools
+import hmac
 import inspect
 import json
 import logging
+import os
 import sys
 import time
 import warnings
@@ -121,6 +123,9 @@ class HookApp(HandlerRegistry):
         # Observability
         self._observers: list[BaseObserver] = []
         self._callback_observers: list[tuple[Callable[..., Any], str | None]] = []
+
+        # Shared secret required by the http transport (set by serve()).
+        self._auth_token: str | None = None
 
     @property
     def task_backend(self) -> BaseBackend:
@@ -365,6 +370,7 @@ class HookApp(HandlerRegistry):
         host: str = "127.0.0.1",
         port: int = 8765,
         *,
+        token: str | None = None,
         log_level: str = "warning",
     ) -> None:
         """Run the hook app as a persistent HTTP server.
@@ -378,14 +384,17 @@ class HookApp(HandlerRegistry):
 
         Requires the ``server`` extra: ``pip install 'fasthooks[server]'``.
 
-        The endpoint is unauthenticated: it dispatches whatever event JSON it
-        receives into your (arbitrary) handlers. Keep the default loopback bind
-        unless you put authentication in front — binding a non-loopback host
-        exposes your hooks to any reachable client (warned at startup).
+        The endpoint dispatches whatever event JSON it receives into your
+        (arbitrary) handlers. Set ``token`` (or the ``FASTHOOKS_TOKEN`` env var)
+        to require an ``Authorization: Bearer <token>`` header — recommended
+        for any non-loopback bind, and worthwhile even on loopback (a local
+        process or a browser page can POST to localhost). ``fasthooks install
+        --http --auth`` generates a token and wires it into the hook config.
 
         Args:
             host: Interface to bind (default: loopback only).
             port: Port to bind.
+            token: Shared secret to require. Defaults to ``$FASTHOOKS_TOKEN``.
             log_level: uvicorn log level.
         """
         try:
@@ -396,14 +405,16 @@ class HookApp(HandlerRegistry):
                 "pip install 'fasthooks[server]'"
             ) from e
 
-        # The endpoint has no auth; a non-loopback bind lets any reachable
-        # client fabricate hook events and trigger handlers. Warn loudly.
-        if host not in ("127.0.0.1", "localhost", "::1", ""):
+        self._auth_token = token or os.environ.get("FASTHOOKS_TOKEN") or None
+
+        # An unauthenticated non-loopback bind lets any reachable client
+        # fabricate hook events and trigger handlers. Warn loudly.
+        if not self._auth_token and host not in ("127.0.0.1", "localhost", "::1", ""):
             print(
                 f"[fasthooks] WARNING: serving on non-loopback host {host!r} "
-                "with no authentication — any client that can reach this port "
-                "can trigger your hooks. Bind 127.0.0.1 or front it with an "
-                "authenticated proxy.",
+                "with NO authentication — any client that can reach this port "
+                "can trigger your hooks. Set a token (FASTHOOKS_TOKEN or "
+                "`install --http --auth`) or front it with an authenticated proxy.",
                 file=sys.stderr,
             )
 
@@ -455,6 +466,20 @@ class HookApp(HandlerRegistry):
             )
             await send({"type": "http.response.body", "body": b""})
             return
+
+        # Enforce the shared secret before reading/dispatching anything, so a
+        # forged request can't reach handler code. Constant-time compare.
+        if self._auth_token is not None:
+            presented = ""
+            for name, value in scope.get("headers", []):
+                if name == b"authorization":
+                    presented = value.decode("latin-1")
+                    break
+            expected = f"Bearer {self._auth_token}"
+            if not hmac.compare_digest(presented, expected):
+                await send({"type": "http.response.start", "status": 401, "headers": []})
+                await send({"type": "http.response.body", "body": b""})
+                return
 
         # Read the full request body
         body = b""

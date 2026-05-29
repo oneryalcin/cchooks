@@ -741,6 +741,17 @@ class TestHttpHookEntries:
         assert sum(h.get("url") == url for h in stop_hooks) == 1
         assert any(h.get("command") == "other.py" for h in stop_hooks)
 
+    def test_generate_settings_http_with_auth(self):
+        result = generate_settings(
+            ["Stop"],
+            "http://127.0.0.1:8765/",
+            hook_type="http",
+            auth_env="FASTHOOKS_TOKEN",
+        )
+        entry = result["hooks"]["Stop"][0]["hooks"][0]
+        assert entry["headers"] == {"Authorization": "Bearer ${FASTHOOKS_TOKEN}"}
+        assert entry["allowedEnvVars"] == ["FASTHOOKS_TOKEN"]
+
     def test_remove_hooks_by_url(self):
         url = "http://127.0.0.1:8765/"
         settings = {
