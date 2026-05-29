@@ -238,6 +238,14 @@ Today `TOOL_EVENT_MAP` and `_parse_lifecycle_event`'s dict mean a new CC event =
 
 **Verify:** through `TestClient`, feed a `FileChanged` and a `PostToolUseFailure` payload (neither exists in today's code) and assert a handler registered via `@app.on(...)` fires. That test failing today and passing after is the proof the staleness is fixed.
 
+> **STATUS: DONE** (branch `revival/phase0-strip-core`, continued).
+> - **`GenericEvent`** (`events/base.py`, `extra="allow"`) is the fallback for any event with no typed model — it *preserves every field* (the crux: `BaseEvent` is `extra="ignore"`, which would silently drop the `FileChanged` filename and make generic dispatch useless). Fields readable as attributes (`event.file_path`) or via `event.data`. Common fields relaxed so an unfamiliar event never fails validation.
+> - **`@app.on(event_name, when=...)`** (`registry.py`) registers a handler for *any* event by name — the never-stale entry point. Works on `HookApp` and `Blueprint`.
+> - **Dispatch is generic** (`app.py`): tool events still get matcher + `"*"` + any `on()` handlers; everything else routes by name and parses as the typed event if one exists, else `GenericEvent`. Unknown events with no handler dispatch cleanly to `None`.
+> - **Verify result:** new `tests/test_generic_events.py` — `@app.on("FileChanged")` and `@app.on("PostToolUseFailure")` fire, read event-specific fields, honor `when=` guards, and unknown-event-no-handler is a clean no-op. **605/605 tests pass**, mypy + ruff clean.
+> - **Observer-guard (the logged Phase-0 follow-up): DONE.** `_emit` now constructs the `HookObservabilityEvent` *after* the no-observer early-return. Empirically verified: **0 pydantic constructions per hook call with no observers** (was ~4–8), 4 when an observer is registered.
+> - **`to_json` format audit: investigated, change DEFERRED (with evidence).** Per hooks.md L1368, top-level `decision`/`reason` is **deprecated for PreToolUse** (use `hookSpecificOutput.permissionDecision`/`Reason`; `approve`/`block` → `allow`/`deny`) but remains **the current, correct format for PostToolUse and Stop**. fasthooks' `deny()`/`allow()` are event-agnostic, so correct serialization needs *event-aware* output at dispatch time — a behavior-sensitive change that should be validated against live Claude Code, not guessed. The deprecated path still functions, so this is non-breaking today; tracking it as a dedicated verified task (also re-check `PermissionHookResponse` against the `hookSpecificOutput.decision.behavior` shape).
+
 ---
 
 ### Phase 2 — `http` server transport (the latency wedge)

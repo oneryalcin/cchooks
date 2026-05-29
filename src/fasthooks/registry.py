@@ -71,6 +71,37 @@ class HandlerRegistry:
         return decorator
 
     # ═══════════════════════════════════════════════════════════════
+    # Generic (event-name) Decorator
+    # ═══════════════════════════════════════════════════════════════
+
+    def on(
+        self, event_name: str, when: Callable[..., Any] | None = None
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """Register a handler for any hook event by name.
+
+        The generic, never-stale entry point: works for any Claude Code hook
+        event — including ones with no dedicated typed decorator (e.g.
+        ``FileChanged``, ``PostToolUseFailure``, ``CwdChanged``). The handler
+        receives a :class:`GenericEvent` (or the typed event if one exists),
+        so new upstream events are usable without a fasthooks release.
+
+        Args:
+            event_name: The ``hook_event_name`` to match (e.g. "FileChanged").
+            when: Optional guard function that receives the event, returns bool.
+
+        Example:
+            @app.on("FileChanged")
+            def on_change(event):
+                print(event.file_path)  # extra fields preserved
+        """
+
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            self._lifecycle_handlers[event_name].append((func, when))
+            return func
+
+        return decorator
+
+    # ═══════════════════════════════════════════════════════════════
     # Lifecycle Decorators
     # ═══════════════════════════════════════════════════════════════
 

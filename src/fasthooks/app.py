@@ -1,4 +1,5 @@
 """Main HookApp class."""
+
 from __future__ import annotations
 
 import functools
@@ -18,7 +19,7 @@ import anyio
 from fasthooks._internal.io import read_stdin, write_stdout
 from fasthooks.blueprint import Blueprint
 from fasthooks.depends.state import NullState, State
-from fasthooks.events.base import BaseEvent
+from fasthooks.events.base import BaseEvent, GenericEvent
 from fasthooks.events.lifecycle import (
     Notification,
     PreCompact,
@@ -46,15 +47,17 @@ from fasthooks.registry import HandlerEntry, HandlerRegistry
 from fasthooks.responses import BaseHookResponse
 
 # Valid event types for @app.on_observe filter
-VALID_OBSERVER_EVENT_TYPES = frozenset({
-    "hook_start",
-    "hook_end",
-    "hook_error",
-    "handler_start",
-    "handler_end",
-    "handler_skip",
-    "handler_error",
-})
+VALID_OBSERVER_EVENT_TYPES = frozenset(
+    {
+        "hook_start",
+        "hook_end",
+        "hook_error",
+        "handler_start",
+        "handler_end",
+        "handler_skip",
+        "handler_error",
+    }
+)
 
 if TYPE_CHECKING:
     from fasthooks.observability.base import BaseObserver
@@ -189,15 +192,19 @@ class HookApp(HandlerRegistry):
 
         return decorator
 
-    def _emit(self, event: HookObservabilityEvent) -> None:
-        """Dispatch event to all observers.
+    def _emit(self, event_type: str, **fields: Any) -> None:
+        """Build and dispatch an observability event to all observers.
 
-        - No-op if no observers registered (zero overhead)
+        - No-op if no observers registered: the event object is not even
+          constructed, so the common (no-observer) path pays nothing — not
+          even building a pydantic model per hook call.
         - Swallows observer exceptions (logs warning)
         """
-        # Zero overhead when unused
+        # Zero overhead when unused — return before constructing the event.
         if not self._observers and not self._callback_observers:
             return
+
+        event = HookObservabilityEvent(event_type=event_type, **fields)
 
         # Dispatch to class-based observers
         for observer in self._observers:
@@ -349,9 +356,7 @@ class HookApp(HandlerRegistry):
         if response:
             write_stdout(response, stdout)
 
-    async def _dispatch(
-        self, data: dict[str, Any]
-    ) -> BaseHookResponse | None:
+    async def _dispatch(self, data: dict[str, Any]) -> BaseHookResponse | None:
         """Dispatch event to appropriate handlers.
 
         Args:
@@ -370,14 +375,12 @@ class HookApp(HandlerRegistry):
 
         # Emit hook_start
         self._emit(
-            HookObservabilityEvent(
-                event_type="hook_start",
-                hook_id=hook_id,
-                session_id=session_id,
-                hook_event_name=hook_event_name,
-                tool_name=tool_name,
-                input_preview=input_preview,
-            )
+            event_type="hook_start",
+            hook_id=hook_id,
+            session_id=session_id,
+            hook_event_name=hook_event_name,
+            tool_name=tool_name,
+            input_preview=input_preview,
         )
 
         hook_type = hook_event_name
@@ -387,46 +390,31 @@ class HookApp(HandlerRegistry):
 
         try:
             # Tool events
-            if hook_type == "PreToolUse":
+            # Tool events carry a tool_name and support matcher + "*" handlers.
+            tool_dicts = {
+                "PreToolUse": self._pre_tool_handlers,
+                "PostToolUse": self._post_tool_handlers,
+                "PermissionRequest": self._permission_handlers,
+            }
+
+            if hook_type in tool_dicts:
                 tool_name_str = data.get("tool_name", "")
-                # Combine tool-specific handlers with catch-all ("*") handlers
+                registry = tool_dicts[hook_type]
+                # Tool-specific + catch-all ("*") + any generic on() handlers
                 handlers = (
-                    self._pre_tool_handlers.get(tool_name_str, [])
-                    + self._pre_tool_handlers.get("*", [])
+                    registry.get(tool_name_str, [])
+                    + registry.get("*", [])
+                    + self._lifecycle_handlers.get(hook_type, [])
                 )
                 event = self._parse_tool_event(tool_name_str, data)
-                response = await self._run_with_middleware(
-                    handlers, event, hook_id, session_id, hook_event_name, tool_name
-                )
-
-            elif hook_type == "PostToolUse":
-                tool_name_str = data.get("tool_name", "")
-                # Combine tool-specific handlers with catch-all ("*") handlers
-                handlers = (
-                    self._post_tool_handlers.get(tool_name_str, [])
-                    + self._post_tool_handlers.get("*", [])
-                )
-                event = self._parse_tool_event(tool_name_str, data)
-                response = await self._run_with_middleware(
-                    handlers, event, hook_id, session_id, hook_event_name, tool_name
-                )
-
-            elif hook_type == "PermissionRequest":
-                tool_name_str = data.get("tool_name", "")
-                # Combine tool-specific handlers with catch-all ("*") handlers
-                handlers = (
-                    self._permission_handlers.get(tool_name_str, [])
-                    + self._permission_handlers.get("*", [])
-                )
-                event = self._parse_tool_event(tool_name_str, data)
-                response = await self._run_with_middleware(
-                    handlers, event, hook_id, session_id, hook_event_name, tool_name
-                )
-
-            # Lifecycle events
-            elif hook_type in self._lifecycle_handlers:
-                handlers = self._lifecycle_handlers[hook_type]
+            else:
+                # Generic path: any event name registered via on() or a typed
+                # lifecycle decorator. Unknown events still dispatch (handlers
+                # may be empty) and parse as GenericEvent, preserving all fields.
+                handlers = self._lifecycle_handlers.get(hook_type, [])
                 event = self._parse_lifecycle_event(hook_type, data)
+
+            if handlers:
                 response = await self._run_with_middleware(
                     handlers, event, hook_id, session_id, hook_event_name, tool_name
                 )
@@ -434,15 +422,13 @@ class HookApp(HandlerRegistry):
         except Exception as e:
             # Emit hook_error
             self._emit(
-                HookObservabilityEvent(
-                    event_type="hook_error",
-                    hook_id=hook_id,
-                    session_id=session_id,
-                    hook_event_name=hook_event_name,
-                    tool_name=tool_name,
-                    error_type=type(e).__name__,
-                    error_message=str(e),
-                )
+                event_type="hook_error",
+                hook_id=hook_id,
+                session_id=session_id,
+                hook_event_name=hook_event_name,
+                tool_name=tool_name,
+                error_type=type(e).__name__,
+                error_message=str(e),
             )
             raise
 
@@ -456,16 +442,14 @@ class HookApp(HandlerRegistry):
             final_reason = getattr(response, "reason", None)
 
         self._emit(
-            HookObservabilityEvent(
-                event_type="hook_end",
-                hook_id=hook_id,
-                session_id=session_id,
-                hook_event_name=hook_event_name,
-                tool_name=tool_name,
-                duration_ms=duration_ms,
-                decision=final_decision,
-                reason=final_reason,
-            )
+            event_type="hook_end",
+            hook_id=hook_id,
+            session_id=session_id,
+            hook_event_name=hook_event_name,
+            tool_name=tool_name,
+            duration_ms=duration_ms,
+            decision=final_decision,
+            reason=final_reason,
         )
 
         return response
@@ -486,7 +470,9 @@ class HookApp(HandlerRegistry):
             "UserPromptSubmit": UserPromptSubmit,
             "Notification": Notification,
         }
-        event_class = event_classes.get(hook_type, BaseEvent)
+        # Unknown events fall back to GenericEvent (preserves all fields) so any
+        # current or future Claude Code hook is dispatchable without a release.
+        event_class = event_classes.get(hook_type, GenericEvent)
         return event_class.model_validate(data)
 
     async def _run_with_middleware(
@@ -511,6 +497,7 @@ class HookApp(HandlerRegistry):
         Returns:
             Response from middleware or handlers
         """
+
         # Build the innermost function (actual handler execution)
         async def run_handlers(evt: BaseEvent) -> BaseHookResponse | None:
             return await self._run_handlers(
@@ -518,9 +505,7 @@ class HookApp(HandlerRegistry):
             )
 
         # Wrap with middleware (outermost first)
-        chain: Callable[
-            [BaseEvent], Coroutine[Any, Any, BaseHookResponse | None]
-        ] = run_handlers
+        chain: Callable[[BaseEvent], Coroutine[Any, Any, BaseHookResponse | None]] = run_handlers
         for mw in reversed(self._middleware):
             chain = self._wrap_middleware(mw, chain)
 
@@ -593,28 +578,24 @@ class HookApp(HandlerRegistry):
                     if not guard_result:
                         # Emit handler_skip for guard failure
                         self._emit(
-                            HookObservabilityEvent(
-                                event_type="handler_skip",
-                                hook_id=hook_id,
-                                session_id=session_id,
-                                hook_event_name=hook_event_name,
-                                tool_name=tool_name,
-                                handler_name=handler_name,
-                                skip_reason="guard failed",
-                            )
+                            event_type="handler_skip",
+                            hook_id=hook_id,
+                            session_id=session_id,
+                            hook_event_name=hook_event_name,
+                            tool_name=tool_name,
+                            handler_name=handler_name,
+                            skip_reason="guard failed",
                         )
                         continue
 
                 # Emit handler_start
                 self._emit(
-                    HookObservabilityEvent(
-                        event_type="handler_start",
-                        hook_id=hook_id,
-                        session_id=session_id,
-                        hook_event_name=hook_event_name,
-                        tool_name=tool_name,
-                        handler_name=handler_name,
-                    )
+                    event_type="handler_start",
+                    hook_id=hook_id,
+                    session_id=session_id,
+                    hook_event_name=hook_event_name,
+                    tool_name=tool_name,
+                    handler_name=handler_name,
                 )
 
                 handler_start = time.perf_counter()
@@ -641,17 +622,15 @@ class HookApp(HandlerRegistry):
 
                 # Emit handler_end
                 self._emit(
-                    HookObservabilityEvent(
-                        event_type="handler_end",
-                        hook_id=hook_id,
-                        session_id=session_id,
-                        hook_event_name=hook_event_name,
-                        tool_name=tool_name,
-                        handler_name=handler_name,
-                        duration_ms=handler_duration,
-                        decision=decision,
-                        reason=reason,
-                    )
+                    event_type="handler_end",
+                    hook_id=hook_id,
+                    session_id=session_id,
+                    hook_event_name=hook_event_name,
+                    tool_name=tool_name,
+                    handler_name=handler_name,
+                    duration_ms=handler_duration,
+                    decision=decision,
+                    reason=reason,
                 )
 
                 # Check if response should stop handler chain
@@ -659,15 +638,13 @@ class HookApp(HandlerRegistry):
                     # Emit handler_skip for remaining handlers
                     for remaining_handler, _ in handlers[i + 1 :]:
                         self._emit(
-                            HookObservabilityEvent(
-                                event_type="handler_skip",
-                                hook_id=hook_id,
-                                session_id=session_id,
-                                hook_event_name=hook_event_name,
-                                tool_name=tool_name,
-                                handler_name=remaining_handler.__name__,
-                                skip_reason=f"early {decision} from {handler_name}",
-                            )
+                            event_type="handler_skip",
+                            hook_id=hook_id,
+                            session_id=session_id,
+                            hook_event_name=hook_event_name,
+                            tool_name=tool_name,
+                            handler_name=remaining_handler.__name__,
+                            skip_reason=f"early {decision} from {handler_name}",
                         )
                     return response
 
@@ -676,22 +653,18 @@ class HookApp(HandlerRegistry):
                 error_duration = (time.perf_counter() - handler_start) * 1000
                 # Emit handler_error
                 self._emit(
-                    HookObservabilityEvent(
-                        event_type="handler_error",
-                        hook_id=hook_id,
-                        session_id=session_id,
-                        hook_event_name=hook_event_name,
-                        tool_name=tool_name,
-                        handler_name=handler_name,
-                        duration_ms=error_duration,
-                        error_type=type(e).__name__,
-                        error_message=str(e),
-                    )
+                    event_type="handler_error",
+                    hook_id=hook_id,
+                    session_id=session_id,
+                    hook_event_name=hook_event_name,
+                    tool_name=tool_name,
+                    handler_name=handler_name,
+                    duration_ms=error_duration,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
                 )
                 # Log and continue (fail open)
-                print(
-                    f"[fasthooks] Handler {handler_name} failed: {e}", file=sys.stderr
-                )
+                print(f"[fasthooks] Handler {handler_name} failed: {e}", file=sys.stderr)
                 continue
 
         return None
