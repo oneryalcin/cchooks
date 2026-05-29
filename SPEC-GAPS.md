@@ -81,7 +81,7 @@ Legend: ✅ typed model + decorator · ⚙️ via `@app.on()` only (no typed mod
 
 | Gap | Spec | fasthooks today | Priority |
 |-----|------|-----------------|----------|
-| `permissionDecision: "ask"` | PreToolUse decision control | only `allow`/`deny` | **HIGH** — natural 3rd builder (`ask_permission()`), escalate-to-user |
+| ~~`permissionDecision: "ask"`~~ | PreToolUse decision control | ✅ **done** — `ask(reason, modify=)` builder | — |
 | `permissionDecision: "defer"` | PreToolUse, "Defer a tool call" | unsupported | LOW — headless/SDK-resume niche |
 | `stopReason` (with `continue: false`) | JSON output universal fields | `continue_`/`interrupt` but no `stopReason` | MED |
 | `updatedPermissions` | PermissionRequest decision control | unsupported | LOW — addRules/setMode entries |

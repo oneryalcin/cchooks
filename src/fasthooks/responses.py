@@ -62,6 +62,10 @@ class HookResponse(BaseHookResponse):
             hso: dict[str, Any] = {"hookEventName": "PreToolUse"}
             if self.decision in ("deny", "block"):
                 hso["permissionDecision"] = "deny"
+            elif self.decision == "ask":
+                # Escalate to the user. Checked before modify so ask(modify=...)
+                # stays "ask" (show the modified input) rather than auto-allow.
+                hso["permissionDecision"] = "ask"
             elif self.modify:
                 # approve + updatedInput = auto-approve the modified input
                 hso["permissionDecision"] = "allow"
@@ -74,10 +78,14 @@ class HookResponse(BaseHookResponse):
             if len(hso) > 1:  # more than just hookEventName
                 output["hookSpecificOutput"] = hso
         else:
-            if self.decision and self.decision != "approve":
+            # Top-level decision's only valid value off PreToolUse is "block"
+            # (deny maps there too); "ask"/"approve" are PreToolUse-only or no-ops.
+            # reason only rides along with an emitted decision — no orphan reason
+            # (e.g. ask() off PreToolUse serializes to nothing).
+            if self.decision and self.decision not in ("approve", "ask"):
                 output["decision"] = self.decision
-            if self.reason:
-                output["reason"] = self.reason
+                if self.reason:
+                    output["reason"] = self.reason
             if self.modify:
                 output["hookSpecificOutput"] = {"updatedInput": self.modify}
 
@@ -102,7 +110,7 @@ class HookResponse(BaseHookResponse):
         returned to Claude Code even though they don't block.
         """
         return bool(
-            self.decision in ("deny", "block")
+            self.decision in ("deny", "block", "ask")
             or self.modify
             or self.message
             or self.interrupt
@@ -148,6 +156,28 @@ def block(reason: str) -> HookResponse:
         HookResponse with block decision
     """
     return HookResponse(decision="block", reason=reason)
+
+
+def ask(reason: str, *, modify: dict[str, Any] | None = None) -> HookResponse:
+    """Escalate a PreToolUse decision to the user (``permissionDecision: "ask"``).
+
+    Instead of allowing or denying outright, prompt the user to confirm the tool
+    call. ``reason`` is shown to the user (not Claude). Pass ``modify`` to show
+    rewritten tool input in the prompt.
+
+    PreToolUse only — on other events this is a no-op. ``ask`` does not
+    short-circuit the handler chain, so a later ``deny`` still wins (matching the
+    protocol's ``deny > ask > allow`` precedence). Among multiple non-blocking
+    responses in one chain, the last one returned wins.
+
+    Args:
+        reason: Explanation shown to the user in the confirmation prompt.
+        modify: Optional dict to rewrite tool input, shown to the user.
+
+    Returns:
+        HookResponse with ask decision
+    """
+    return HookResponse(decision="ask", reason=reason, modify=modify)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

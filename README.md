@@ -119,11 +119,12 @@ A handler returns a response to influence Claude Code, or returns nothing to
 stay out of the way.
 
 ```python
-from fasthooks import allow, deny, block, approve_permission, deny_permission
+from fasthooks import allow, deny, block, ask, approve_permission, deny_permission
 
 return None                                 # Pass / no opinion (the common case)
 return deny("Reason shown to Claude")       # Block a tool (PreToolUse)
 return block("Continue working on X")       # Don't stop yet (Stop/SubagentStop)
+return ask("Confirm this command?")         # Escalate to the user (PreToolUse)
 
 return allow()                              # Same as `return None` (no-op)
 return allow(message="note")                # Allow, but show a message
