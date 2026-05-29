@@ -61,9 +61,18 @@ Guards filter via `when=` lambda. Catch-all handlers use `@app.pre_tool()` (no a
 
 ## Claude Code Hooks Protocol
 
-See `docs/refs/hooks-refs.md` for the complete Claude Code hooks reference:
-- Hook events: PreToolUse, PostToolUse, Stop, SubagentStop, SessionStart, SessionEnd, UserPromptSubmit, Notification, PreCompact
+Authoritative reference (read these, not a stale local copy):
+- Reference: https://code.claude.com/docs/en/hooks.md
+- Guide: https://code.claude.com/docs/en/hooks-guide.md
+
+Quick orientation:
 - Input JSON schema per event type (tool_name, tool_input, tool_response, etc.)
 - Output JSON schema: `decision`, `reason`, `hookSpecificOutput`, `continue`, `systemMessage`
 - Exit codes: 0=success, 2=blocking error (stderr shown to Claude)
 - Matchers: exact match, regex (`Edit|Write`), catch-all (`*`)
+- PreToolUse uses `hookSpecificOutput.permissionDecision` (allow/deny/ask/defer);
+  top-level `decision`/`reason` is current for other events (PostToolUse, Stop, ...).
+
+The protocol now defines ~40 events; fasthooks ships typed models for ~10 and
+routes the rest through the never-stale `@app.on("EventName")`. See `SPEC-GAPS.md`
+for the tracked coverage gaps (untyped events, unsupported decision fields).
