@@ -261,6 +261,13 @@ CC `http` hooks POST the event JSON and expect the same output JSON; **any error
 
 **Verify (the empirical payoff — measure it):** start the server, `curl` a `PreToolUse` `rm -rf` payload, assert the deny JSON comes back, and time it: it should be **single-digit ms** vs the ~300 ms command-hook path measured in this review. Record both numbers side by side — that delta *is* the pitch.
 
+> **STATUS: DONE** (branch `revival/phase0-strip-core`, continued).
+> - **`HookApp.serve(host, port)`** + **`_asgi_app`** (`app.py`): a minimal raw-ASGI handler — no FastAPI/Starlette, just `uvicorn` (new `server` extra). One endpoint dispatches every event (`_dispatch` already keys off `hook_event_name`); the *same* `to_json()` output as the stdin path. Per the hooks reference, any error **fails open** (empty 200), so a server fault never blocks the agent loop. (Gotcha fixed: uvicorn mis-detected the bound-method app as ASGI 2.0 — pinned `interface="asgi3"`.)
+> - **`fasthooks serve <path>`** (`cli/commands/serve.py`): loads the `HookApp` from a hooks file and serves it; prints the exact `{"type":"http","url":...}` snippet to drop into settings.json.
+> - **Measured, side by side:** `curl` of a `PreToolUse` `rm -rf` payload returns `{"decision":"deny",...}` in **avg 0.95 ms (min 0.84, max 1.25, n=30)** — vs **~300 ms** for the warm `uv run` command-hook path. **~300× faster per tool call.** Generic events (`FileChanged`) and malformed JSON both return clean 200s.
+> - **Tests:** `tests/test_serve.py` drives `_asgi_app` directly (mock ASGI scope/receive/send — no live server needed): deny→JSON, allow→empty 200, generic-event-over-http, fail-open on bad JSON, lifespan startup/shutdown. **612/612 pass**, mypy + ruff clean.
+> - **Out of scope (still, per the plan):** invisible lifecycle (auto-start/reload) — `fasthooks serve` is run manually for now; that polish is deferred until the slice is consumed.
+
 ---
 
 ### Phase 3 — `fasthooks add` + first recipe, end-to-end (the engine/config split, made real)

@@ -356,6 +356,105 @@ class HookApp(HandlerRegistry):
         if response:
             write_stdout(response, stdout)
 
+    # ═══════════════════════════════════════════════════════════════
+    # HTTP server transport (Claude Code "http" hooks)
+    # ═══════════════════════════════════════════════════════════════
+
+    def serve(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 8765,
+        *,
+        log_level: str = "warning",
+    ) -> None:
+        """Run the hook app as a persistent HTTP server.
+
+        The command-hook model (:meth:`run`) spawns a fresh Python process —
+        and re-pays interpreter + import cost — on *every* tool call. As a
+        Claude Code ``http`` hook instead, the app starts once and answers
+        every event over HTTP in milliseconds. Point a ``type: "http"`` hook
+        at ``http://{host}:{port}/`` (one endpoint handles all events; dispatch
+        keys off ``hook_event_name``).
+
+        Requires the ``server`` extra: ``pip install 'fasthooks[server]'``.
+
+        Args:
+            host: Interface to bind (default: loopback only).
+            port: Port to bind.
+            log_level: uvicorn log level.
+        """
+        try:
+            import uvicorn
+        except ImportError as e:  # pragma: no cover - import guard
+            raise RuntimeError(
+                "serve() requires uvicorn. Install with: "
+                "pip install 'fasthooks[server]'"
+            ) from e
+
+        # interface="asgi3": _asgi_app is a bound method, which uvicorn's
+        # auto-detection otherwise mistakes for the legacy ASGI 2.0 (one-arg
+        # factory) protocol. Be explicit.
+        uvicorn.run(
+            self._asgi_app,
+            host=host,
+            port=port,
+            log_level=log_level,
+            interface="asgi3",
+        )
+
+    async def _asgi_app(
+        self,
+        scope: dict[str, Any],
+        receive: Callable[[], Any],
+        send: Callable[[dict[str, Any]], Any],
+    ) -> None:
+        """Minimal ASGI handler backing :meth:`serve`.
+
+        Claude Code ``http`` hooks POST the event JSON and expect the same
+        JSON output format as command hooks. Per the hooks reference, any
+        non-2xx/connection error fails open (execution continues), so on any
+        internal error we return an empty 200 ("no decision") rather than
+        risk blocking the agent loop.
+        """
+        if scope["type"] == "lifespan":
+            while True:
+                message = await receive()
+                if message["type"] == "lifespan.startup":
+                    await send({"type": "lifespan.startup.complete"})
+                elif message["type"] == "lifespan.shutdown":
+                    await send({"type": "lifespan.shutdown.complete"})
+                    return
+        if scope["type"] != "http":
+            return
+
+        # Read the full request body
+        body = b""
+        while True:
+            message = await receive()
+            body += message.get("body", b"")
+            if not message.get("more_body", False):
+                break
+
+        output = ""
+        try:
+            data = json.loads(body) if body else {}
+            if data:
+                response = await self._dispatch(data)
+                if response:
+                    output = response.to_json()
+        except Exception as e:  # fail open — never block the agent loop
+            print(f"[fasthooks] serve handler error: {e}", file=sys.stderr)
+
+        payload = output.encode("utf-8")
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"application/json")],
+            }
+        )
+        await send({"type": "http.response.body", "body": payload})
+
     async def _dispatch(self, data: dict[str, Any]) -> BaseHookResponse | None:
         """Dispatch event to appropriate handlers.
 

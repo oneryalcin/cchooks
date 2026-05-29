@@ -139,6 +139,27 @@ def status(
 
 
 @app.command()
+def serve(
+    path: Annotated[
+        str,
+        typer.Argument(help="Path to hooks.py file"),
+    ],
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Host to bind to"),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", help="Port to bind to"),
+    ] = 8765,
+) -> None:
+    """Run hooks as a persistent HTTP server (Claude Code http hook)."""
+    from fasthooks.cli.commands.serve import run_serve
+
+    raise typer.Exit(code=run_serve(path, host, port, console))
+
+
+@app.command()
 def studio(
     db: Annotated[
         str | None,
