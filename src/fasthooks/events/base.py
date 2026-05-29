@@ -10,9 +10,15 @@ class BaseEvent(BaseModel):
     """Base model for all Claude Code hook events.
 
     All events share these common fields from the hook input.
+
+    ``extra="allow"``: every event keeps the fields Claude Code sends, even
+    ones with no typed accessor. The typed attributes are a convenience layer
+    over the raw payload, which stays fully reachable via :attr:`data`. This
+    means upstream schema additions (new fields on existing events) are usable
+    immediately — fasthooks never silently drops what it doesn't model.
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
     session_id: str
     cwd: str
@@ -20,25 +26,21 @@ class BaseEvent(BaseModel):
     hook_event_name: str
     transcript_path: str | None = None
 
+    @property
+    def data(self) -> dict[str, Any]:
+        """The full event payload, including fields without typed accessors."""
+        return self.model_dump()
+
 
 class GenericEvent(BaseEvent):
     """Fallback event for hook types without a dedicated typed model.
 
     Claude Code ships new hook events regularly; this model lets fasthooks
-    dispatch any of them without a release. Unlike the typed events it keeps
-    every field Claude Code sends (``extra="allow"``), so handlers can read
-    event-specific fields either as attributes (``event.file_path``) or as a
-    dict via ``event.data``.
+    dispatch any of them without a release. It inherits field preservation and
+    :attr:`data` from :class:`BaseEvent`, and additionally relaxes the common
+    fields so an unfamiliar event never fails validation and becomes
+    undispatchable.
     """
 
-    model_config = ConfigDict(extra="allow")
-
-    # Common fields aren't guaranteed on every event type, so relax them: an
-    # unfamiliar event should never fail validation and become undispatchable.
     session_id: str = ""
     cwd: str = ""
-
-    @property
-    def data(self) -> dict[str, Any]:
-        """All fields received, including those without typed accessors."""
-        return self.model_dump()

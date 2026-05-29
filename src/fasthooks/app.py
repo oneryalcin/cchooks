@@ -565,6 +565,10 @@ class HookApp(HandlerRegistry):
 
         for i, (handler, guard) in enumerate(handlers):
             handler_name = handler.__name__
+            # Bind before the guard runs: a guard that raises (common with
+            # field-based guards on unfamiliar GenericEvent payloads) must be
+            # caught below and fail open, not blow up on an unbound timer.
+            handler_start = time.perf_counter()
 
             try:
                 # Check guard condition (supports async guards)
@@ -597,8 +601,6 @@ class HookApp(HandlerRegistry):
                     tool_name=tool_name,
                     handler_name=handler_name,
                 )
-
-                handler_start = time.perf_counter()
 
                 # Build dependencies based on type hints
                 deps = self._resolve_dependencies(handler, event, dep_cache)

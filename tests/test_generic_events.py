@@ -99,3 +99,67 @@ def test_generic_event_missing_common_fields_still_parses():
     assert event.hook_event_name == "WeirdNewEvent"
     assert event.session_id == ""
     assert event.data["x"] == 1
+
+
+# ── Regression: adversarial review findings ──────────────────────────────────
+
+
+def test_raising_guard_fails_open_and_runs_later_handlers():
+    """A guard that raises must not abort dispatch (fail-open contract).
+
+    Field-based guards on GenericEvent payloads will hit missing attributes;
+    before the fix this raised UnboundLocalError in the error path and aborted
+    the whole hook, so later handlers never ran.
+    """
+    app = HookApp()
+    later_ran = []
+
+    @app.on("FileChanged", when=lambda e: e.file_path.endswith(".py"))
+    def needs_field(event):  # guard raises: payload has no file_path
+        later_ran.append("first")
+
+    @app.on("FileChanged")
+    def always(event):
+        later_ran.append("second")
+
+    client = TestClient(app)
+    # No file_path -> first handler's guard raises
+    response = client.send_raw(
+        {"hook_event_name": "FileChanged", "session_id": "s", "cwd": "/r"}
+    )
+
+    assert response is None  # failed open, not crashed
+    assert later_ran == ["second"]  # subsequent handler still ran
+
+
+def test_known_event_preserves_upstream_fields_and_exposes_data():
+    """on() handlers on KNOWN events must also keep unmodeled fields + .data.
+
+    extra='allow' on the typed events means upstream schema additions on
+    existing event names aren't silently dropped.
+    """
+    app = HookApp()
+    seen = {}
+
+    @app.on("PreToolUse")
+    def h(event):
+        seen["type"] = type(event).__name__
+        seen["new_field"] = getattr(event, "new_upstream_field", "<DROPPED>")
+        seen["via_data"] = event.data.get("new_upstream_field")
+
+    client = TestClient(app)
+    client.send_raw(
+        {
+            "hook_event_name": "PreToolUse",
+            "session_id": "s",
+            "cwd": "/r",
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "tool_use_id": "t",
+            "new_upstream_field": "kept",
+        }
+    )
+
+    assert seen["type"] == "Bash"  # still the typed event
+    assert seen["new_field"] == "kept"  # but the new field survived
+    assert seen["via_data"] == "kept"  # and .data is available on typed events
