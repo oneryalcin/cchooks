@@ -139,6 +139,27 @@ def status(
 
 
 @app.command()
+def add(
+    recipe: Annotated[
+        str,
+        typer.Argument(help="Recipe name (e.g. kill-switch, steer)"),
+    ],
+    recipes_dir: Annotated[
+        str,
+        typer.Option("--dir", help="Directory to scaffold the recipe config into"),
+    ] = ".claude/hooks/recipes",
+    force: Annotated[
+        bool,
+        typer.Option("--force", "-f", help="Overwrite an existing recipe config"),
+    ] = False,
+) -> None:
+    """Scaffold a recipe (e.g. kill-switch) into your project."""
+    from fasthooks.cli.commands.add import run_add
+
+    raise typer.Exit(code=run_add(recipe, recipes_dir, force, console))
+
+
+@app.command()
 def serve(
     path: Annotated[
         str,

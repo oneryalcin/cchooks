@@ -286,6 +286,14 @@ Implement the recipe contract with **one** recipe chosen for being the cleanest 
 
 **Verify the full acceptance test:** in a temp project, `fasthooks add kill-switch` → `touch AGENT_STOP` → POST a `PreToolUse` payload to the running server → **denied**; `rm AGENT_STOP` → **allowed**. Then `fasthooks add default-fail-gate` (second recipe) and confirm settings.json is unchanged and no restart is needed — recipe #2 just registers at server runtime.
 
+> **STATUS: DONE** (branch `revival/phase0-strip-core`, continued).
+> - **The engine/config split, realized.** `fasthooks/recipes/` ships two tested **engines** (Blueprint factories): `kill_switch(sentinel="AGENT_STOP")` (catch-all `PreToolUse` deny while the sentinel exists) and `steer(sentinel="STEER.md")` (inject the file into the next prompt as context, then delete it) — both ported from cwc (Apache-2.0, credited in source). The **config** is a small editable file you own.
+> - **`fasthooks add <recipe>`** scaffolds `.claude/hooks/recipes/<name>.py` (engine import + the one config knob, default derived from the engine signature so it can't drift). It **never touches settings.json** — that's *why* adding recipe #2 needs no Claude Code restart.
+> - **`include_recipes(app, dir)`** discovers and includes every scaffolded `recipe`. It **fails open per file** (advisor + my own F1 contract): a broken/throwing recipe is skipped with a stderr warning so it can't take down the others or the server — covered by a deliberately-broken-recipe test. The `fasthooks init` template now calls it, so recipes are drop-in.
+> - **Acceptance test proven through the real assembly, not just unit tests:** `fasthooks add kill-switch` → `fasthooks serve hooks.py` (whose `include_recipes(app)` discovered the recipe) → live `curl` returned the deny while `AGENT_STOP` existed, allowed once removed. Unit tests cover both engines, scaffolding, fail-open discovery, and "add is settings-neutral / idempotent."
+> - **623/623 pass**, mypy + ruff clean. Core `import fasthooks` stays lean — recipes are not pulled in.
+> - **Honest scope caveat:** `fasthooks install` still emits the *old* `uv run` command-hook config; nothing yet writes `{"type":"http","url":...}` into settings.json (`serve` only prints the snippet). So full "restart Claude Code once → works" still needs a one-time manual settings edit. What is *proven* is the narrower, still-strong claim: **adding recipes never touches settings.json.** Wiring `install`/a new command to emit the http config is the natural next step.
+
 ---
 
 ### Explicitly OUT of the minimal slice (name it, so scope can't creep)
