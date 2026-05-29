@@ -4,7 +4,49 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wire-output shapes. These are the JSON objects Claude Code reads back from a
+# hook. Modeled as TypedDicts (zero runtime cost — they're plain dicts) so mypy
+# checks the camelCase key names: a typo like "permissionDecisonReason" is a
+# silent no-op on the wire otherwise, since Claude Code just ignores unknown keys.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class PermissionDecision(TypedDict, total=False):
+    """Nested ``decision`` object for PermissionRequest hooks."""
+
+    behavior: str  # "allow" | "deny"
+    updatedInput: dict[str, Any]
+    message: str
+    interrupt: bool
+
+
+class HookSpecificOutput(TypedDict, total=False):
+    """``hookSpecificOutput`` across event shapes (every key optional)."""
+
+    hookEventName: str
+    permissionDecision: str  # PreToolUse: "allow" | "deny" | "ask"
+    permissionDecisionReason: str  # PreToolUse
+    updatedInput: dict[str, Any]  # PreToolUse
+    additionalContext: str  # tool events / context
+    decision: PermissionDecision  # PermissionRequest
+
+
+# "continue" is a Python keyword, so the top-level output uses functional syntax.
+HookOutput = TypedDict(
+    "HookOutput",
+    {
+        "decision": str,  # top-level decision (block/deny) for non-PreToolUse
+        "reason": str,
+        "continue": bool,
+        "stopReason": str,
+        "systemMessage": str,
+        "hookSpecificOutput": HookSpecificOutput,
+    },
+    total=False,
+)
 
 
 class BaseHookResponse(ABC):
@@ -55,13 +97,13 @@ class HookResponse(BaseHookResponse):
 
     def to_json(self, hook_event_name: str | None = None) -> str:
         """Serialize to Claude Code expected JSON format."""
-        output: dict[str, Any] = {}
+        output: HookOutput = {}
 
         if hook_event_name == "PreToolUse":
             # PreToolUse returns its decision inside hookSpecificOutput; the
             # top-level decision/reason form is deprecated for this event.
             # approve -> "allow", block -> "deny".
-            hso: dict[str, Any] = {"hookEventName": "PreToolUse"}
+            hso: HookSpecificOutput = {"hookEventName": "PreToolUse"}
             if self.decision in ("deny", "block"):
                 hso["permissionDecision"] = "deny"
             elif self.decision == "ask":
@@ -90,12 +132,12 @@ class HookResponse(BaseHookResponse):
                 output["decision"] = self.decision
                 if self.reason:
                     output["reason"] = self.reason
-            hso_else: dict[str, Any] = {}
+            hso_else: HookSpecificOutput = {}
             if self.modify:
                 hso_else["updatedInput"] = self.modify
             if self.additional_context:
                 # hookSpecificOutput requires hookEventName off PreToolUse.
-                hso_else["hookEventName"] = hook_event_name
+                hso_else["hookEventName"] = hook_event_name or ""
                 hso_else["additionalContext"] = self.additional_context
             if hso_else:
                 output["hookSpecificOutput"] = hso_else
@@ -252,7 +294,7 @@ class PermissionHookResponse(BaseHookResponse):
 
     def to_json(self, hook_event_name: str | None = None) -> str:
         """Serialize to Claude Code PermissionRequest format."""
-        decision: dict[str, Any] = {"behavior": self.behavior}
+        decision: PermissionDecision = {"behavior": self.behavior}
 
         if self.behavior == "allow" and self.modify:
             decision["updatedInput"] = self.modify
@@ -262,7 +304,7 @@ class PermissionHookResponse(BaseHookResponse):
             if self.interrupt:
                 decision["interrupt"] = True
 
-        output = {
+        output: HookOutput = {
             "hookSpecificOutput": {
                 "hookEventName": "PermissionRequest",
                 "decision": decision,
@@ -315,7 +357,7 @@ class ContextResponse(BaseHookResponse):
 
     def to_json(self, hook_event_name: str | None = None) -> str:
         """Serialize to Claude Code format with additionalContext."""
-        output: dict[str, Any] = {
+        output: HookOutput = {
             "hookSpecificOutput": {
                 "hookEventName": self.hook_event_name,
                 "additionalContext": self.additional_context,
