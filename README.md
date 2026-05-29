@@ -192,6 +192,44 @@ def on_bash_failure(event):
     ...
 ```
 
+### Custom & MCP tools
+
+Typed accessors (`event.command`, `event.file_path`) exist for the built-in
+tools. **Any other tool — including MCP tools — works too, via `event.tool_input`:**
+
+```python
+@app.pre_tool("mcp__server__search")
+def guard(event):
+    query = event.tool_input.get("query", "")   # always available, any tool
+    if "secret" in query:
+        return deny("No.")
+```
+
+That's the only thing you need. If you hook a custom tool *often* and want the
+same typed-accessor / autocomplete experience as the built-ins, register a
+`ToolEvent` subclass (opt-in — one registration covers pre/post/permission):
+
+```python
+from fasthooks import ToolEvent
+
+class Search(ToolEvent):
+    @property
+    def query(self) -> str:
+        return self.tool_input.get("query", "")
+
+app.register_tool_event("mcp__server__search", Search)
+
+@app.pre_tool("mcp__server__search")
+def guard(event):           # event is a Search
+    if "secret" in event.query:
+        return deny("No.")
+```
+
+The payoff (autocomplete) costs one `@property` per field. Expose fields via
+`@property` over `self.tool_input` and don't add **required** pydantic fields:
+event parsing happens before your handler runs, so a validation error on a
+missing field would fail *open* (allow) even under `fail_mode="closed"`.
+
 ### Dependency Injection
 
 ```python

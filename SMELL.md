@@ -68,18 +68,39 @@ fix direction. Status: `open` → `in-progress` → `done` (link the commit/PR).
 
 ---
 
-## S2 — "Typed events" is partial and the fallback is silent about it
+## S2 — "Typed events" is partial and the fallback is undocumented
 **Severity:** medium
-**Status:** open
+**Status:** done — branch `devx/smell-tracking`
 
 **Evidence:**
 - ~10 built-in tools have typed accessors (`events/tools.py`); **any custom or MCP
   tool falls back to bare `ToolEvent`** with no accessors —
-  `app.py:648` `TOOL_EVENT_MAP.get(tool_name, ToolEvent)`. Author silently drops to
-  `event.tool_input.get("...")`, no autocomplete, no signal they left the typed path.
+  `app.py` `TOOL_EVENT_MAP.get(tool_name, ToolEvent)`. The author must know to use
+  `event.tool_input`; accessing a non-modeled field (`event.query`) raises
+  `AttributeError` (verified — *not* a silent `None`, so the gap is discoverability
+  + no autocomplete, not wrong values).
 
-**Fix direction:** document the fallback explicitly; consider a typed `.input` helper
-or a way to register accessors for custom/MCP tools.
+**Resolution (done):**
+- **Docs first** (the diagnosed gap was discoverability): README "Custom & MCP tools"
+  leads with "`event.tool_input` always works for any tool," then presents the opt-in.
+- **Opt-in mechanism:** `app.register_tool_event(name, ToolEventSubclass)` — per-app
+  (no global mutation / test leakage), validates the subclass (fast-fail TypeError),
+  one registration covers pre/post/permission. Resolution order in
+  `_parse_tool_event`: per-app override → built-in map → bare ToolEvent.
+- Exported `ToolEvent`, `HookEventName`, `GenericEvent` at top level for ergonomic
+  subclassing/import.
+- **Documented constraint (cross-feature interaction):** custom event classes must be
+  `@property`-only and keep `extra="allow"` — a *required* pydantic field would make
+  parsing (which runs in `_dispatch`, *outside* `_run_handlers`) fail **open** on a
+  missing field, punching a hole through `fail_mode="closed"`. Same interaction class
+  as the S3 guard-raise bug.
+- 5 tests in `tests/test_tool_event_registration.py` (typed pre + post, bare fallback
+  + AttributeError, subclass validation, per-app isolation).
+
+**Not done (deliberately):** the built-in `tools.py` accessors are still a hand-maintained
+`@property` wall; registration pushes that same boilerplate onto custom-tool authors.
+Acceptable (it's the durable pattern, opt-in) but a future ticket could explore a
+schema-driven accessor generator.
 
 ---
 

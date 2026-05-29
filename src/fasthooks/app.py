@@ -113,6 +113,10 @@ class HookApp(HandlerRegistry):
         self.log_dir = log_dir
         self.log_level = log_level
         self.fail_mode: FailMode = fail_mode
+        # Per-app typed-event overrides for custom/MCP tools, checked before the
+        # built-in TOOL_EVENT_MAP. Per-instance (not a global mutation) so apps
+        # and tests don't leak registrations into each other.
+        self._tool_event_overrides: dict[str, type[ToolEvent]] = {}
 
         # Deprecation warning for log_dir
         if log_dir is not None:
@@ -678,9 +682,48 @@ class HookApp(HandlerRegistry):
         # no block semantics -> fail open even when closed.
         return None
 
+    def register_tool_event(
+        self, tool_name: str, event_class: type[ToolEvent]
+    ) -> None:
+        """Register a typed event class for a custom or MCP tool.
+
+        Built-in tools (Bash, Write, ...) ship typed accessors; any other tool
+        falls back to the bare :class:`ToolEvent`, where you read fields via
+        ``event.tool_input``. Register a :class:`ToolEvent` subclass to get the
+        same typed-accessor / autocomplete experience for your own tool. One
+        registration covers PreToolUse, PostToolUse, and PermissionRequest.
+
+        The subclass should expose fields via ``@property`` over
+        ``self.tool_input`` and must NOT add required pydantic fields: parsing
+        happens before the handler runs, so a validation error on a missing
+        field would fail open (allow) even under ``fail_mode="closed"``.
+
+        Args:
+            tool_name: The tool's ``tool_name`` (e.g. "mcp__server__search").
+            event_class: A ToolEvent subclass.
+
+        Example:
+            class Search(ToolEvent):
+                @property
+                def query(self) -> str:
+                    return self.tool_input.get("query", "")
+
+            app.register_tool_event("mcp__server__search", Search)
+        """
+        if not (isinstance(event_class, type) and issubclass(event_class, ToolEvent)):
+            raise TypeError(
+                f"event_class must be a ToolEvent subclass, got {event_class!r}"
+            )
+        self._tool_event_overrides[tool_name] = event_class
+
     def _parse_tool_event(self, tool_name: str, data: dict[str, Any]) -> ToolEvent:
-        """Parse data into typed tool event."""
-        event_class = TOOL_EVENT_MAP.get(tool_name, ToolEvent)
+        """Parse data into typed tool event.
+
+        Resolution order: per-app override → built-in map → bare ToolEvent.
+        """
+        event_class = self._tool_event_overrides.get(tool_name) or TOOL_EVENT_MAP.get(
+            tool_name, ToolEvent
+        )
         return event_class.model_validate(data)
 
     def _parse_lifecycle_event(self, hook_type: str, data: dict[str, Any]) -> BaseEvent:
