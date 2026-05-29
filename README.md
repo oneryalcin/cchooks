@@ -115,22 +115,39 @@ Use `--scope user|local` to install elsewhere, and `fasthooks uninstall` to remo
 
 ### Responses
 
+A handler returns a response to influence Claude Code, or returns nothing to
+stay out of the way.
+
 ```python
 from fasthooks import allow, deny, block, approve_permission, deny_permission
 
-return allow()                              # Proceed
-return allow(message="Approved by hook")    # With message
-return deny("Reason shown to Claude")       # Block tool
-return block("Continue working on X")       # For Stop hooks
+return None                                 # Pass / no opinion (the common case)
+return deny("Reason shown to Claude")       # Block a tool (PreToolUse)
+return block("Continue working on X")       # Don't stop yet (Stop/SubagentStop)
 
-# For PermissionRequest hooks
-return approve_permission()                 # Auto-approve permission
-return approve_permission(modify={"command": "safe"})  # Approve with modified input
-return deny_permission("Not allowed")       # Deny permission
+return allow()                              # Same as `return None` (no-op)
+return allow(message="note")                # Allow, but show a message
+return allow(modify={"command": "safe ls"}) # Allow with rewritten tool input
 
-# For SessionStart / UserPromptSubmit - inject text into Claude's context
+# PermissionRequest hooks (a *different* response shape — see below)
+return approve_permission()                 # Allow the permission
+return approve_permission(modify={"command": "safe"})
+return deny_permission("Not allowed")       # Deny the permission
+
+# SessionStart / UserPromptSubmit - inject text into Claude's context
 return context("Project uses Python 3.12", hook_event="SessionStart")
 ```
+
+**`return None` vs `allow()`** — they're equivalent for a bare allow: both mean
+"no opinion, proceed." The idiomatic guard just returns nothing (or `deny(...)`).
+Reach for `allow(...)` only when you want to *attach* something — a `message`, or
+a `modify` that rewrites the tool input before it runs.
+
+**`allow()` vs `approve_permission()`** — same intent ("let it proceed"), two
+different hook shapes. Regular tool hooks (`PreToolUse`, …) use `allow`/`deny`;
+the separate `PermissionRequest` hook uses `approve_permission`/`deny_permission`.
+The verbs differ because Claude Code's protocol uses a different field vocabulary
+for each — fasthooks mirrors the wire shapes rather than papering over them.
 
 ### Tool Decorators
 

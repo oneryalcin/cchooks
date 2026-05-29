@@ -106,7 +106,7 @@ schema-driven accessor generator.
 
 ## S1 — "Yes" has three faces and one verb flips
 **Severity:** low (mostly docs — the split is protocol-inherited, not fasthooks' invention)
-**Status:** open
+**Status:** done — branch `devx/smell-tracking`
 
 **Evidence:**
 - `allow()` → decision `"approve"`; `return None` also allows; permission requests use
@@ -120,6 +120,13 @@ schema-driven accessor generator.
 **Fix direction:** docs only — say *when* to use `return None` vs `allow()`, and that
 `allow()`/`approve_permission()` are the same intent across two protocol shapes. Do
 NOT rename builders. Tracked alongside issue #26 (observability vocabulary unification).
+
+**Resolution (done):** README "Responses" section rewritten. Verified empirically
+that a bare `allow()` is dispatch-equivalent to `return None` (both non-blocking, no
+output). Added: "`return None` vs `allow()`" (equivalent for bare allow; reach for
+`allow(...)` only to attach a `message`/`modify`) and "`allow()` vs
+`approve_permission()`" (same intent, two protocol shapes — regular tool hooks vs the
+separate PermissionRequest hook; verbs mirror the wire vocabulary). No code change.
 
 ---
 
