@@ -206,11 +206,27 @@ def serve(
             help="Require this shared secret (defaults to $FASTHOOKS_TOKEN)",
         ),
     ] = None,
+    allow_unauthenticated: Annotated[
+        bool,
+        typer.Option(
+            "--allow-unauthenticated",
+            help="Permit a non-loopback bind with no token (unsafe)",
+        ),
+    ] = False,
 ) -> None:
     """Run hooks as a persistent HTTP server (Claude Code http hook)."""
     from fasthooks.cli.commands.serve import run_serve
 
-    raise typer.Exit(code=run_serve(path, host, port, console, token=token))
+    raise typer.Exit(
+        code=run_serve(
+            path,
+            host,
+            port,
+            console,
+            token=token,
+            allow_unauthenticated=allow_unauthenticated,
+        )
+    )
 
 
 @app.command()

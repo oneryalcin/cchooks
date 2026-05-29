@@ -172,6 +172,23 @@ def test_serve_no_token_means_open():
     assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
+def test_serve_rejects_oversized_body():
+    """A body over the cap is rejected with 413 (no memory exhaustion)."""
+    app = HookApp()
+    status, body = _drive(app, b"x" * (4 * 1024 * 1024 + 1))
+    assert status == 413
+    assert body == b""
+
+
+def test_serve_refuses_non_loopback_without_token(monkeypatch):
+    import pytest
+
+    monkeypatch.delenv("FASTHOOKS_TOKEN", raising=False)
+    app = HookApp()
+    with pytest.raises(RuntimeError, match="non-loopback"):
+        app.serve(host="0.0.0.0")
+
+
 def test_serve_handles_lifespan():
     app = HookApp()
     events = iter(["lifespan.startup", "lifespan.shutdown"])

@@ -16,6 +16,7 @@ from fasthooks.cli_utils import (
     generate_settings,
     get_lock_path,
     get_settings_path,
+    http_all_hooks,
     make_relative_command,
     merge_hooks_config,
     read_lock,
@@ -116,8 +117,13 @@ def run_install(
         command = make_relative_command(hooks_resolved, project_root)
 
     # Step 8: Generate settings
+    # For http, register every http-compatible event (one server receives all of
+    # them and no-ops the ones it doesn't handle), so recipes/handlers added
+    # later work without reinstalling. Command mode registers only what's
+    # introspected, since each event there spawns a process.
+    settings_hooks = http_all_hooks() if http else hooks
     new_config = generate_settings(
-        hooks, command, hook_type=hook_type, auth_env=auth_env
+        settings_hooks, command, hook_type=hook_type, auth_env=auth_env
     )
 
     # Step 9: Backup existing settings

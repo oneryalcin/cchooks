@@ -371,6 +371,7 @@ class HookApp(HandlerRegistry):
         port: int = 8765,
         *,
         token: str | None = None,
+        allow_unauthenticated: bool = False,
         log_level: str = "warning",
     ) -> None:
         """Run the hook app as a persistent HTTP server.
@@ -395,8 +396,31 @@ class HookApp(HandlerRegistry):
             host: Interface to bind (default: loopback only).
             port: Port to bind.
             token: Shared secret to require. Defaults to ``$FASTHOOKS_TOKEN``.
+            allow_unauthenticated: Permit a non-loopback bind without a token.
+                Off by default: binding a public host with no auth is refused.
             log_level: uvicorn log level.
         """
+        self._auth_token = token or os.environ.get("FASTHOOKS_TOKEN") or None
+
+        # An unauthenticated non-loopback bind exposes arbitrary hook execution
+        # to any reachable client. Fail closed unless explicitly allowed.
+        # Checked before importing uvicorn so the refusal is fast and unconditional.
+        is_loopback = host in ("127.0.0.1", "localhost", "::1", "")
+        if not self._auth_token and not is_loopback:
+            if not allow_unauthenticated:
+                raise RuntimeError(
+                    f"Refusing to bind non-loopback host {host!r} without "
+                    "authentication. Set a token (FASTHOOKS_TOKEN or "
+                    "`install --http --auth`), or pass allow_unauthenticated=True "
+                    "(`serve --allow-unauthenticated`) to override."
+                )
+            print(
+                f"[fasthooks] WARNING: serving on {host!r} with NO authentication "
+                "(--allow-unauthenticated) — any client that can reach this port "
+                "can trigger your hooks.",
+                file=sys.stderr,
+            )
+
         try:
             import uvicorn
         except ImportError as e:  # pragma: no cover - import guard
@@ -404,19 +428,6 @@ class HookApp(HandlerRegistry):
                 "serve() requires uvicorn. Install with: "
                 "pip install 'fasthooks[server]'"
             ) from e
-
-        self._auth_token = token or os.environ.get("FASTHOOKS_TOKEN") or None
-
-        # An unauthenticated non-loopback bind lets any reachable client
-        # fabricate hook events and trigger handlers. Warn loudly.
-        if not self._auth_token and host not in ("127.0.0.1", "localhost", "::1", ""):
-            print(
-                f"[fasthooks] WARNING: serving on non-loopback host {host!r} "
-                "with NO authentication — any client that can reach this port "
-                "can trigger your hooks. Set a token (FASTHOOKS_TOKEN or "
-                "`install --http --auth`) or front it with an authenticated proxy.",
-                file=sys.stderr,
-            )
 
         # interface="asgi3": _asgi_app is a bound method, which uvicorn's
         # auto-detection otherwise mistakes for the legacy ASGI 2.0 (one-arg
@@ -481,13 +492,24 @@ class HookApp(HandlerRegistry):
                 await send({"type": "http.response.body", "body": b""})
                 return
 
-        # Read the full request body
-        body = b""
+        # Read the request body with a hard cap. Hook payloads are small; an
+        # unbounded read lets any client exhaust memory and kill the server
+        # (which, since hooks fail open, would silently disable them).
+        max_body = 4 * 1024 * 1024  # 4 MiB
+        chunks: list[bytes] = []
+        total = 0
         while True:
             message = await receive()
-            body += message.get("body", b"")
+            chunk = message.get("body", b"")
+            total += len(chunk)
+            if total > max_body:
+                await send({"type": "http.response.start", "status": 413, "headers": []})
+                await send({"type": "http.response.body", "body": b""})
+                return
+            chunks.append(chunk)
             if not message.get("more_body", False):
                 break
+        body = b"".join(chunks)
 
         output = ""
         try:

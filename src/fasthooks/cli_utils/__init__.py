@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fasthooks.cli_utils.introspect import generate_settings
+from fasthooks.cli_utils.introspect import generate_settings, http_all_hooks
 from fasthooks.cli_utils.lock import delete_lock, read_lock, write_lock
 from fasthooks.cli_utils.paths import (
     find_project_root,
@@ -12,6 +12,7 @@ from fasthooks.cli_utils.paths import (
 )
 from fasthooks.cli_utils.settings import (
     backup_settings,
+    hook_identity,
     merge_hooks_config,
     read_settings,
     remove_hooks_by_command,
@@ -25,6 +26,8 @@ __all__ = [
     "delete_lock",
     "find_project_root",
     "generate_settings",
+    "hook_identity",
+    "http_all_hooks",
     "get_lock_path",
     "get_settings_path",
     "make_relative_command",

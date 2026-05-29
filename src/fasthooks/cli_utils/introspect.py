@@ -18,6 +18,51 @@ _TOOL_EVENTS = frozenset(
     }
 )
 
+# All Claude Code events that support http hooks (per the hooks reference;
+# SessionStart/Setup and display-only events are excluded — they don't support
+# http). Used by `install --http` so one running server receives every event it
+# might handle and recipes added later work without reinstalling. Tool-name
+# events get a "*" matcher; the rest fire without one.
+_HTTP_TOOL_EVENTS = [
+    "PreToolUse",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "PermissionRequest",
+    "PermissionDenied",
+]
+_HTTP_PLAIN_EVENTS = [
+    "PostToolBatch",
+    "Stop",
+    "StopFailure",
+    "SubagentStart",
+    "SubagentStop",
+    "TaskCreated",
+    "TaskCompleted",
+    "TeammateIdle",
+    "UserPromptSubmit",
+    "UserPromptExpansion",
+    "Notification",
+    "PreCompact",
+    "PostCompact",
+    "SessionEnd",
+    "ConfigChange",
+    "CwdChanged",
+    "InstructionsLoaded",
+    "Elicitation",
+    "ElicitationResult",
+    "WorktreeCreate",
+    "WorktreeRemove",
+]
+
+
+def http_all_hooks() -> list[str]:
+    """Hook identifiers covering every http-compatible Claude Code event.
+
+    Returned in the same ``"Event[:matcher]"`` form ``generate_settings``
+    consumes: tool events as ``"<Event>:*"``, the rest bare.
+    """
+    return [f"{e}:*" for e in _HTTP_TOOL_EVENTS] + list(_HTTP_PLAIN_EVENTS)
+
 
 def generate_settings(
     hooks: list[str],

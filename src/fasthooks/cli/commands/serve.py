@@ -43,7 +43,13 @@ def _load_app(path: Path) -> HookApp | None:
 
 
 def run_serve(
-    path: str, host: str, port: int, console: Console, *, token: str | None = None
+    path: str,
+    host: str,
+    port: int,
+    console: Console,
+    *,
+    token: str | None = None,
+    allow_unauthenticated: bool = False,
 ) -> int:
     """Run a hooks file as a persistent HTTP server.
 
@@ -90,7 +96,15 @@ def run_serve(
     )
 
     try:
-        hook_app.serve(host=host, port=port, token=token)
+        hook_app.serve(
+            host=host,
+            port=port,
+            token=token,
+            allow_unauthenticated=allow_unauthenticated,
+        )
+    except RuntimeError as e:
+        console.print(f"[red]✗[/red] {e}")
+        return 1
     except KeyboardInterrupt:
         console.print("\n[dim]Stopped.[/dim]")
     return 0

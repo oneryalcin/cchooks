@@ -741,6 +741,17 @@ class TestHttpHookEntries:
         assert sum(h.get("url") == url for h in stop_hooks) == 1
         assert any(h.get("command") == "other.py" for h in stop_hooks)
 
+    def test_http_all_hooks_covers_common_events_with_matchers(self):
+        from fasthooks.cli_utils import http_all_hooks
+
+        hooks = http_all_hooks()
+        # tool events carry a "*" matcher; lifecycle events are bare
+        assert "PreToolUse:*" in hooks
+        assert "UserPromptSubmit" in hooks
+        assert "Stop" in hooks
+        # SessionStart/Setup don't support http hooks -> excluded
+        assert not any(h.split(":")[0] == "SessionStart" for h in hooks)
+
     def test_generate_settings_http_with_auth(self):
         result = generate_settings(
             ["Stop"],

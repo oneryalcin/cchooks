@@ -317,6 +317,17 @@ Implement the recipe contract with **one** recipe chosen for being the cleanest 
 
 ---
 
+# Review round 4 (auth+install): fail-closed, all-events coverage, DoS, status
+
+> **STATUS: DONE.** A fresh adversarial+standard pass on the auth/install work surfaced four issues; all addressed (two were genuine user-posture decisions, resolved via AskUserQuestion).
+> - *[HIGH adversarial] Non-loopback bind ran unauthenticated (warn-then-bind).* **Now fail-closed:** `serve()` refuses a non-loopback host with no token unless `allow_unauthenticated=True` / `serve --allow-unauthenticated`. The check runs before the uvicorn import (fast, unconditional). Loopback stays open. (User chose fail-closed + escape hatch.)
+> - *[P1 standard] Recipes added after install were silently inert.* The "no settings change" property hid a gap: Claude Code only delivers events present in settings.json at install time, so a later `steer` recipe (UserPromptSubmit) never fired. **Fixed:** `install --http` now registers the **full http-compatible event catalog** (26 events; tool events with `*`, the rest bare; SessionStart/Setup excluded — no http support), so CC forwards everything to the one server and recipes added later work with no reinstall. This makes the Phase-3 "drop-in" promise actually true. (User chose register-all.)
+> - *[MED adversarial] Unbounded request body → memory-exhaustion DoS.* **Fixed:** `_asgi_app` caps the body at 4 MiB and returns 413 before dispatch.
+> - *[P2 standard] `status` misreported http installs as out-of-sync* (matched only `command`, not `url`). **Fixed:** matches by `hook_identity` (command-or-url), and expects the full catalog for http locks.
+> - 640/640 pass, mypy clean (my files), ruff clean (my files; pre-existing `transcript/`/`testing/` debt unchanged).
+
+---
+
 ### Explicitly OUT of the minimal slice (name it, so scope can't creep)
 
 Defer until the slice above is consumed and proven:
