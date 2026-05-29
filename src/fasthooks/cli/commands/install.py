@@ -25,7 +25,16 @@ from fasthooks.cli_utils import (
 )
 
 
-def run_install(path: str, scope: str, force: bool, console: Console) -> int:
+def run_install(
+    path: str,
+    scope: str,
+    force: bool,
+    console: Console,
+    *,
+    http: bool = False,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+) -> int:
     """
     Install hooks to Claude Code settings.
 
@@ -34,6 +43,10 @@ def run_install(path: str, scope: str, force: bool, console: Console) -> int:
         scope: Installation scope (project, user, local)
         force: Reinstall even if already installed
         console: Rich console for output
+        http: Register an ``http`` hook pointing at a running ``fasthooks serve``
+            endpoint instead of a per-call ``command`` hook.
+        host: Server host for http mode.
+        port: Server port for http mode.
 
     Returns:
         Exit code (0=success, 1=error, 2=validation error)
@@ -41,8 +54,8 @@ def run_install(path: str, scope: str, force: bool, console: Console) -> int:
     hooks_path = Path(path)
 
     # Step 1: Validate path exists (handled by validate_and_introspect)
-    # Step 2: Check uv installed
-    if not check_uv_installed():
+    # Step 2: Check uv installed (command mode only; http hooks don't shell out)
+    if not http and not check_uv_installed():
         console.print(
             "[yellow]⚠[/yellow] uv not found in PATH. Hooks may fail at runtime.\n"
             "  Install: https://docs.astral.sh/uv/getting-started/installation/"
@@ -85,11 +98,15 @@ def run_install(path: str, scope: str, force: bool, console: Console) -> int:
         )
         return 0
 
-    # Step 7: Generate command
-    command = make_relative_command(hooks_resolved, project_root)
+    # Step 7: Generate the hook's identity (command string, or http url)
+    hook_type = "http" if http else "command"
+    if http:
+        command = f"http://{host}:{port}/"
+    else:
+        command = make_relative_command(hooks_resolved, project_root)
 
     # Step 8: Generate settings
-    new_config = generate_settings(hooks, command)
+    new_config = generate_settings(hooks, command, hook_type=hook_type)
 
     # Step 9: Backup existing settings
     settings_path = get_settings_path(scope, project_root)
@@ -139,7 +156,10 @@ def run_install(path: str, scope: str, force: bool, console: Console) -> int:
         "settings_file": str(settings_path.relative_to(project_root))
         if settings_path.is_relative_to(project_root)
         else str(settings_path),
+        # "command" holds the entry's identity (command string or http url) and
+        # is what uninstall/status match on. hook_type records which it is.
         "command": command,
+        "hook_type": hook_type,
     }
     try:
         write_lock(lock_path, lock_data)
@@ -156,13 +176,26 @@ def run_install(path: str, scope: str, force: bool, console: Console) -> int:
     except ValueError:
         console.print(f"[green]✓[/green] Created {lock_path}")
 
-    # Step 12: Print restart reminder
+    # Step 12: Print activation reminder
     console.print()
-    console.print(
-        Panel(
-            "Restart Claude Code to activate hooks.",
-            border_style="blue",
+    if http:
+        console.print(
+            Panel(
+                f"Registered an [bold]http[/bold] hook at [bold]{command}[/bold].\n\n"
+                "Start the server (it must be running for hooks to fire):\n"
+                f"  [bold]fasthooks serve {path} --host {host} --port {port}[/bold]\n\n"
+                "Then restart Claude Code once to pick up the new settings.\n"
+                "[dim]After that, editing handlers/recipes only needs a server "
+                "restart — no settings change.[/dim]",
+                border_style="blue",
+            )
         )
-    )
+    else:
+        console.print(
+            Panel(
+                "Restart Claude Code to activate hooks.",
+                border_style="blue",
+            )
+        )
 
     return 0

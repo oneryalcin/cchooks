@@ -296,6 +296,17 @@ Implement the recipe contract with **one** recipe chosen for being the cleanest 
 
 ---
 
+# Post-slice: `install --http` (close the settings gap)
+
+> **STATUS: DONE** (the settings→http gap above is now closed).
+> - **`fasthooks install <path> --http [--host --port]`** writes `{"type":"http","url":...}` entries into settings.json instead of the `uv run` command — so "restart Claude Code once → works" no longer needs a manual edit. The identity used for dedup/uninstall/status generalized from "command string" to **command-*or*-url** (`hook_identity`), so the merge/lock/remove machinery works for both transports. Verified end-to-end: install → reinstall `--force` (dedups, no duplicate) → uninstall (removes by url, deletes lock).
+> - **Codex round-3 findings, triaged:**
+>   - *[P2 standard] Generic-tool-event coverage collapsed at install time.* `@app.on("PreToolUse")` beside `@app.pre_tool("Bash")` introspected to `['PreToolUse:Bash','PreToolUse']` and `generate_settings` kept only the `Bash` matcher — so Claude Code would never deliver Edit/Write/etc. to the catch-all, even though `_dispatch` handles them. **Fixed:** a bare registration of a tool-capable event (`PreToolUse`/`PostToolUse`/`PostToolUseFailure`/`PermissionRequest`/`PermissionDenied`) now installs as a `*` matcher. Regression tests added. A genuine install-vs-dispatch divergence the review caught.
+>   - *[HIGH adversarial] Unauthenticated endpoint — escalated, decision pending.* The reviewer escalated the Phase-2 auth finding to no-ship and tied the fix to the generated config (a shared-secret token surfaced in the http hook `headers`). This is now the active decision: implement the token (secure-by-default `install --http`) vs. keep the documented cheap-defenses posture. Tracked; not yet actioned.
+> - 629/629 pass, mypy clean (my files; ~33 pre-existing transitive errors in `strategies/` etc. remain and are not mine), ruff clean.
+
+---
+
 ### Explicitly OUT of the minimal slice (name it, so scope can't creep)
 
 Defer until the slice above is consumed and proven:

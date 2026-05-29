@@ -97,11 +97,28 @@ def install(
             help="Reinstall even if already installed",
         ),
     ] = False,
+    http: Annotated[
+        bool,
+        typer.Option(
+            "--http",
+            help="Register an http hook (point at a running 'fasthooks serve')",
+        ),
+    ] = False,
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Server host for --http"),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", help="Server port for --http"),
+    ] = 8765,
 ) -> None:
     """Register hooks with Claude Code."""
     from fasthooks.cli.commands.install import run_install
 
-    raise typer.Exit(code=run_install(path, scope, force, console))
+    raise typer.Exit(
+        code=run_install(path, scope, force, console, http=http, host=host, port=port)
+    )
 
 
 @app.command()

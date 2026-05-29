@@ -66,6 +66,16 @@ def backup_settings(path: Path) -> Path | None:
     return backup_path
 
 
+def hook_identity(hook: dict[str, Any]) -> str | None:
+    """The string that identifies one of our hook entries.
+
+    For ``command`` hooks it's the command; for ``http`` hooks it's the url.
+    Used to find and replace/remove entries we previously installed,
+    independent of the hook delivery type.
+    """
+    return hook.get("command") or hook.get("url")
+
+
 def merge_hooks_config(
     existing: dict[str, Any], new: dict[str, Any], our_command: str
 ) -> dict[str, Any]:
@@ -95,7 +105,9 @@ def merge_hooks_config(
         result["hooks"][event_type] = [
             entry
             for entry in result["hooks"][event_type]
-            if not any(hook.get("command") == our_command for hook in entry.get("hooks", []))
+            if not any(
+                hook_identity(hook) == our_command for hook in entry.get("hooks", [])
+            )
         ]
         # Clean up empty lists
         if not result["hooks"][event_type]:
@@ -138,8 +150,8 @@ def remove_hooks_by_command(
         kept = []
         for entry in entries:
             hooks = entry.get("hooks", [])
-            # Filter out hooks matching our command, keep the rest
-            remaining = [h for h in hooks if h.get("command") != command]
+            # Filter out hooks matching our identity (command or url), keep the rest
+            remaining = [h for h in hooks if hook_identity(h) != command]
             removed += len(hooks) - len(remaining)
 
             if remaining:
