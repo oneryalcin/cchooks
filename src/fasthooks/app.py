@@ -21,7 +21,7 @@ import anyio
 from fasthooks._internal.io import read_stdin, serialize_response, write_stdout
 from fasthooks.blueprint import Blueprint
 from fasthooks.depends.state import NullState, State
-from fasthooks.events.base import BaseEvent, GenericEvent
+from fasthooks.events.base import BaseEvent, GenericEvent, HookEventName
 from fasthooks.events.lifecycle import (
     Notification,
     PreCompact,
@@ -45,8 +45,8 @@ from fasthooks.events.tools import (
 )
 from fasthooks.logging import EventLogger
 from fasthooks.observability.events import HookObservabilityEvent
-from fasthooks.registry import HandlerEntry, HandlerRegistry
-from fasthooks.responses import BaseHookResponse
+from fasthooks.registry import FAIL_MODE_ATTR, FailMode, HandlerEntry, HandlerRegistry
+from fasthooks.responses import BaseHookResponse, block, deny, deny_permission
 
 # Valid event types for @app.on_observe filter
 VALID_OBSERVER_EVENT_TYPES = frozenset(
@@ -93,6 +93,7 @@ class HookApp(HandlerRegistry):
         log_dir: str | None = None,
         log_level: str = "INFO",
         task_backend: BaseBackend | None = None,
+        fail_mode: FailMode = "open",
     ):
         """Initialize HookApp.
 
@@ -101,11 +102,21 @@ class HookApp(HandlerRegistry):
             log_dir: Directory for JSONL event logs (enables built-in logging)
             log_level: Logging verbosity
             task_backend: Backend for background tasks (default: InMemoryBackend)
+            fail_mode: Default behavior when a handler raises. "open" (default)
+                logs the error and lets the action proceed; "closed" denies the
+                action for events that can block (PreToolUse, PostToolUse,
+                PermissionRequest, Stop, SubagentStop). Override per handler via
+                the decorator's ``fail_mode=`` argument.
         """
         super().__init__()
         self.state_dir = state_dir
         self.log_dir = log_dir
         self.log_level = log_level
+        self.fail_mode: FailMode = fail_mode
+        # Per-app typed-event overrides for custom/MCP tools, checked before the
+        # built-in TOOL_EVENT_MAP. Per-instance (not a global mutation) so apps
+        # and tests don't leak registrations into each other.
+        self._tool_event_overrides: dict[str, type[ToolEvent]] = {}
 
         # Deprecation warning for log_dir
         if log_dir is not None:
@@ -581,9 +592,9 @@ class HookApp(HandlerRegistry):
             # Tool events
             # Tool events carry a tool_name and support matcher + "*" handlers.
             tool_dicts = {
-                "PreToolUse": self._pre_tool_handlers,
-                "PostToolUse": self._post_tool_handlers,
-                "PermissionRequest": self._permission_handlers,
+                HookEventName.PRE_TOOL_USE: self._pre_tool_handlers,
+                HookEventName.POST_TOOL_USE: self._post_tool_handlers,
+                HookEventName.PERMISSION_REQUEST: self._permission_handlers,
             }
 
             if hook_type in tool_dicts:
@@ -643,21 +654,88 @@ class HookApp(HandlerRegistry):
 
         return response
 
+    def _fail_closed_response(
+        self, hook_event_name: str, handler_name: str, error: Exception
+    ) -> BaseHookResponse | None:
+        """Synthesize an event-appropriate blocking response for a crashed handler.
+
+        Used when the effective fail mode is "closed". Each event has its own
+        block shape, so we reuse the response builders (a bare ``deny()`` would
+        serialize wrong for a PermissionRequest). Events with no block semantics
+        return ``None`` — there's nothing to block, so they stay fail-open.
+        """
+        reason = (
+            f"Hook '{handler_name}' errored and fail_mode is closed "
+            f"({type(error).__name__}: {error})"
+        )
+        if hook_event_name == HookEventName.PRE_TOOL_USE:
+            return deny(reason)
+        if hook_event_name == HookEventName.PERMISSION_REQUEST:
+            return deny_permission(reason)
+        if hook_event_name in (
+            HookEventName.STOP,
+            HookEventName.SUBAGENT_STOP,
+            HookEventName.POST_TOOL_USE,
+        ):
+            return block(reason)
+        # SessionStart/End, Notification, PreCompact, UserPromptSubmit, unknown:
+        # no block semantics -> fail open even when closed.
+        return None
+
+    def register_tool_event(
+        self, tool_name: str, event_class: type[ToolEvent]
+    ) -> None:
+        """Register a typed event class for a custom or MCP tool.
+
+        Built-in tools (Bash, Write, ...) ship typed accessors; any other tool
+        falls back to the bare :class:`ToolEvent`, where you read fields via
+        ``event.tool_input``. Register a :class:`ToolEvent` subclass to get the
+        same typed-accessor / autocomplete experience for your own tool. One
+        registration covers PreToolUse, PostToolUse, and PermissionRequest.
+
+        The subclass should expose fields via ``@property`` over
+        ``self.tool_input`` and must NOT add required pydantic fields: parsing
+        happens before the handler runs, so a validation error on a missing
+        field would fail open (allow) even under ``fail_mode="closed"``.
+
+        Args:
+            tool_name: The tool's ``tool_name`` (e.g. "mcp__server__search").
+            event_class: A ToolEvent subclass.
+
+        Example:
+            class Search(ToolEvent):
+                @property
+                def query(self) -> str:
+                    return self.tool_input.get("query", "")
+
+            app.register_tool_event("mcp__server__search", Search)
+        """
+        if not (isinstance(event_class, type) and issubclass(event_class, ToolEvent)):
+            raise TypeError(
+                f"event_class must be a ToolEvent subclass, got {event_class!r}"
+            )
+        self._tool_event_overrides[tool_name] = event_class
+
     def _parse_tool_event(self, tool_name: str, data: dict[str, Any]) -> ToolEvent:
-        """Parse data into typed tool event."""
-        event_class = TOOL_EVENT_MAP.get(tool_name, ToolEvent)
+        """Parse data into typed tool event.
+
+        Resolution order: per-app override → built-in map → bare ToolEvent.
+        """
+        event_class = self._tool_event_overrides.get(tool_name) or TOOL_EVENT_MAP.get(
+            tool_name, ToolEvent
+        )
         return event_class.model_validate(data)
 
     def _parse_lifecycle_event(self, hook_type: str, data: dict[str, Any]) -> BaseEvent:
         """Parse data into typed lifecycle event."""
         event_classes: dict[str, type[BaseEvent]] = {
-            "Stop": Stop,
-            "SubagentStop": SubagentStop,
-            "SessionStart": SessionStart,
-            "SessionEnd": SessionEnd,
-            "PreCompact": PreCompact,
-            "UserPromptSubmit": UserPromptSubmit,
-            "Notification": Notification,
+            HookEventName.STOP: Stop,
+            HookEventName.SUBAGENT_STOP: SubagentStop,
+            HookEventName.SESSION_START: SessionStart,
+            HookEventName.SESSION_END: SessionEnd,
+            HookEventName.PRE_COMPACT: PreCompact,
+            HookEventName.USER_PROMPT_SUBMIT: UserPromptSubmit,
+            HookEventName.NOTIFICATION: Notification,
         }
         # Unknown events fall back to GenericEvent (preserves all fields) so any
         # current or future Claude Code hook is dispatchable without a release.
@@ -758,33 +836,51 @@ class HookApp(HandlerRegistry):
 
         for i, (handler, guard) in enumerate(handlers):
             handler_name = handler.__name__
-            # Bind before the guard runs: a guard that raises (common with
-            # field-based guards on unfamiliar GenericEvent payloads) must be
-            # caught below and fail open, not blow up on an unbound timer.
             handler_start = time.perf_counter()
 
-            try:
-                # Check guard condition (supports async guards)
-                if guard is not None:
+            # A `when=` guard is a filter, not the safety check. If it can't be
+            # evaluated (e.g. a field-based guard raising on an unfamiliar
+            # GenericEvent payload), the handler simply doesn't match. Guard
+            # errors ALWAYS fail open (skip the handler), independent of
+            # fail_mode — only the handler body below honors fail_mode.
+            if guard is not None:
+                try:
                     if inspect.iscoroutinefunction(guard):
                         guard_result = await guard(event)
                     else:
                         guard_result = await anyio.to_thread.run_sync(
                             functools.partial(guard, event)
                         )
-                    if not guard_result:
-                        # Emit handler_skip for guard failure
-                        self._emit(
-                            event_type="handler_skip",
-                            hook_id=hook_id,
-                            session_id=session_id,
-                            hook_event_name=hook_event_name,
-                            tool_name=tool_name,
-                            handler_name=handler_name,
-                            skip_reason="guard failed",
-                        )
-                        continue
+                except Exception as e:
+                    self._emit(
+                        event_type="handler_skip",
+                        hook_id=hook_id,
+                        session_id=session_id,
+                        hook_event_name=hook_event_name,
+                        tool_name=tool_name,
+                        handler_name=handler_name,
+                        skip_reason=f"guard error: {type(e).__name__}",
+                    )
+                    print(
+                        f"[fasthooks] Guard for {handler_name} errored "
+                        f"(skipping handler): {e}",
+                        file=sys.stderr,
+                    )
+                    continue
+                if not guard_result:
+                    # Emit handler_skip for guard failure
+                    self._emit(
+                        event_type="handler_skip",
+                        hook_id=hook_id,
+                        session_id=session_id,
+                        hook_event_name=hook_event_name,
+                        tool_name=tool_name,
+                        handler_name=handler_name,
+                        skip_reason="guard failed",
+                    )
+                    continue
 
+            try:
                 # Emit handler_start
                 self._emit(
                     event_type="handler_start",
@@ -863,6 +959,20 @@ class HookApp(HandlerRegistry):
                     error_type=type(e).__name__,
                     error_message=str(e),
                 )
+                # Fail open (allow) or closed (block) depending on the
+                # effective mode: per-handler override (stashed by the decorator
+                # / strategy wrapper) falls back to the app default.
+                effective_mode = getattr(handler, FAIL_MODE_ATTR, None) or self.fail_mode
+                if effective_mode == "closed":
+                    closed = self._fail_closed_response(hook_event_name, handler_name, e)
+                    if closed is not None:
+                        print(
+                            f"[fasthooks] Handler {handler_name} failed; "
+                            f"failing closed: {e}",
+                            file=sys.stderr,
+                        )
+                        return closed
+
                 # Log and continue (fail open)
                 print(f"[fasthooks] Handler {handler_name} failed: {e}", file=sys.stderr)
                 continue

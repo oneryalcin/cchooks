@@ -1,9 +1,36 @@
 """Base event model for all hook events."""
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
+
+
+class HookEventName(str, Enum):
+    """Canonical Claude Code ``hook_event_name`` values.
+
+    Subclasses ``str`` (like :class:`fasthooks.tasks.base.TaskStatus`), so
+    members are drop-in interchangeable with the raw strings Claude Code sends
+    — usable as dict keys, in ``==`` comparisons, and JSON-serialized to their
+    wire value without conversion. Centralizes the magic strings the dispatcher
+    keys off, instead of scattering literals like ``"PreToolUse"``.
+
+    Note: this enumerates the events fasthooks models. Unknown/new events still
+    dispatch via :class:`GenericEvent` — the enum is for the known set, not a
+    closed-world constraint.
+    """
+
+    PRE_TOOL_USE = "PreToolUse"
+    POST_TOOL_USE = "PostToolUse"
+    PERMISSION_REQUEST = "PermissionRequest"
+    STOP = "Stop"
+    SUBAGENT_STOP = "SubagentStop"
+    SESSION_START = "SessionStart"
+    SESSION_END = "SessionEnd"
+    PRE_COMPACT = "PreCompact"
+    USER_PROMPT_SUBMIT = "UserPromptSubmit"
+    NOTIFICATION = "Notification"
 
 
 class BaseEvent(BaseModel):

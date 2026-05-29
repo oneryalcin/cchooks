@@ -115,22 +115,39 @@ Use `--scope user|local` to install elsewhere, and `fasthooks uninstall` to remo
 
 ### Responses
 
+A handler returns a response to influence Claude Code, or returns nothing to
+stay out of the way.
+
 ```python
 from fasthooks import allow, deny, block, approve_permission, deny_permission
 
-return allow()                              # Proceed
-return allow(message="Approved by hook")    # With message
-return deny("Reason shown to Claude")       # Block tool
-return block("Continue working on X")       # For Stop hooks
+return None                                 # Pass / no opinion (the common case)
+return deny("Reason shown to Claude")       # Block a tool (PreToolUse)
+return block("Continue working on X")       # Don't stop yet (Stop/SubagentStop)
 
-# For PermissionRequest hooks
-return approve_permission()                 # Auto-approve permission
-return approve_permission(modify={"command": "safe"})  # Approve with modified input
-return deny_permission("Not allowed")       # Deny permission
+return allow()                              # Same as `return None` (no-op)
+return allow(message="note")                # Allow, but show a message
+return allow(modify={"command": "safe ls"}) # Allow with rewritten tool input
 
-# For SessionStart / UserPromptSubmit - inject text into Claude's context
+# PermissionRequest hooks (a *different* response shape — see below)
+return approve_permission()                 # Allow the permission
+return approve_permission(modify={"command": "safe"})
+return deny_permission("Not allowed")       # Deny the permission
+
+# SessionStart / UserPromptSubmit - inject text into Claude's context
 return context("Project uses Python 3.12", hook_event="SessionStart")
 ```
+
+**`return None` vs `allow()`** — they're equivalent for a bare allow: both mean
+"no opinion, proceed." The idiomatic guard just returns nothing (or `deny(...)`).
+Reach for `allow(...)` only when you want to *attach* something — a `message`, or
+a `modify` that rewrites the tool input before it runs.
+
+**`allow()` vs `approve_permission()`** — same intent ("let it proceed"), two
+different hook shapes. Regular tool hooks (`PreToolUse`, …) use `allow`/`deny`;
+the separate `PermissionRequest` hook uses `approve_permission`/`deny_permission`.
+The verbs differ because Claude Code's protocol uses a different field vocabulary
+for each — fasthooks mirrors the wire shapes rather than papering over them.
 
 ### Tool Decorators
 
@@ -192,6 +209,44 @@ def on_bash_failure(event):
     ...
 ```
 
+### Custom & MCP tools
+
+Typed accessors (`event.command`, `event.file_path`) exist for the built-in
+tools. **Any other tool — including MCP tools — works too, via `event.tool_input`:**
+
+```python
+@app.pre_tool("mcp__server__search")
+def guard(event):
+    query = event.tool_input.get("query", "")   # always available, any tool
+    if "secret" in query:
+        return deny("No.")
+```
+
+That's the only thing you need. If you hook a custom tool *often* and want the
+same typed-accessor / autocomplete experience as the built-ins, register a
+`ToolEvent` subclass (opt-in — one registration covers pre/post/permission):
+
+```python
+from fasthooks import ToolEvent
+
+class Search(ToolEvent):
+    @property
+    def query(self) -> str:
+        return self.tool_input.get("query", "")
+
+app.register_tool_event("mcp__server__search", Search)
+
+@app.pre_tool("mcp__server__search")
+def guard(event):           # event is a Search
+    if "secret" in event.query:
+        return deny("No.")
+```
+
+The payoff (autocomplete) costs one `@property` per field. Expose fields via
+`@property` over `self.tool_input` and don't add **required** pydantic fields:
+event parsing happens before your handler runs, so a validation error on a
+missing field would fail *open* (allow) even under `fail_mode="closed"`.
+
 ### Dependency Injection
 
 ```python
@@ -221,6 +276,25 @@ def startup_only(event):
     # Only on fresh startup, not resume
     pass
 ```
+
+### Fail mode (what happens when a handler crashes)
+
+By default fasthooks **fails open** — if a handler raises, the error is logged and
+the action proceeds. For a security guard you usually want the opposite: a crash
+should **block**, not silently allow.
+
+```python
+app = HookApp(fail_mode="closed")          # app-wide default
+
+@app.pre_tool("Bash", fail_mode="closed")  # or per-handler
+def guard(event):
+    ...
+```
+
+When `closed`, a crashed handler denies/blocks the event it was handling
+(PreToolUse → deny, PermissionRequest → deny, Stop/SubagentStop/PostToolUse →
+block). Events with no block semantics (SessionStart, Notification, …) always
+fail open. Strategies declare their own `fail_mode` via `Meta`.
 
 ### Blueprints
 

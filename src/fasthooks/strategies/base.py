@@ -13,6 +13,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from fasthooks import Blueprint
+from fasthooks.registry import FAIL_MODE_ATTR
 
 from ..observability import DecisionEvent, ErrorEvent, ObservabilityEvent
 
@@ -265,6 +266,10 @@ class Strategy(ABC):
                     )
                 )
 
+        # Tag the wrapper with the strategy's fail mode so dispatch enforces it
+        # (e.g. CleanStateStrategy's "closed" actually blocks on error). A
+        # strategy's declared fail_mode is authoritative for its own handlers.
+        setattr(wrapped, FAIL_MODE_ATTR, getattr(self.Meta, "fail_mode", "open"))
         return wrapped
 
     def get_meta(self) -> StrategyMeta:
