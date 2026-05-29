@@ -50,8 +50,18 @@ fix direction. Status: `open` → `in-progress` → `done` (link the commit/PR).
 - Strategy `Meta.fail_mode` tagged onto the handler wrapper (`base.py`), so
   `CleanStateStrategy`'s "closed" now actually blocks. Strategy mode is
   authoritative over the app default for its own handlers.
-- 11 behavior tests in `tests/test_fail_mode.py` (incl. DI-miss → deny, and
-  non-blocking-event → stays open).
+- **Guards fail open even in closed mode.** A `when=` guard is a filter, not the
+  safety check — guard evaluation is in its own try/except that always skips the
+  handler on error (only the handler *body* honors fail_mode). Caught in review:
+  without this, a field-based guard raising on a `GenericEvent` payload would
+  block the tool.
+- **Event names are now a `HookEventName(str, Enum)`** (`events/base.py`) instead
+  of scattered `"PreToolUse"` literals; used across dispatch (`tool_dicts`,
+  `event_classes`, `_fail_closed_response`). str-subclass → drop-in with the raw
+  wire strings as dict keys / in comparisons. (Tool *names* like "Bash" stay
+  strings — open-ended set incl. MCP tools.)
+- 13 behavior tests in `tests/test_fail_mode.py` (incl. DI-miss → deny,
+  non-blocking-event → stays open, guard-raise → skip-not-block).
 - **Known limitation:** per-handler mode is stashed as a function attribute, so
   registering the *same function object* under two `fail_mode`s lets the last win.
   Rare; documented. Lifting it would mean carrying mode in the `HandlerEntry` tuple.

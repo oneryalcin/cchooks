@@ -21,7 +21,7 @@ import anyio
 from fasthooks._internal.io import read_stdin, serialize_response, write_stdout
 from fasthooks.blueprint import Blueprint
 from fasthooks.depends.state import NullState, State
-from fasthooks.events.base import BaseEvent, GenericEvent
+from fasthooks.events.base import BaseEvent, GenericEvent, HookEventName
 from fasthooks.events.lifecycle import (
     Notification,
     PreCompact,
@@ -588,9 +588,9 @@ class HookApp(HandlerRegistry):
             # Tool events
             # Tool events carry a tool_name and support matcher + "*" handlers.
             tool_dicts = {
-                "PreToolUse": self._pre_tool_handlers,
-                "PostToolUse": self._post_tool_handlers,
-                "PermissionRequest": self._permission_handlers,
+                HookEventName.PRE_TOOL_USE: self._pre_tool_handlers,
+                HookEventName.POST_TOOL_USE: self._post_tool_handlers,
+                HookEventName.PERMISSION_REQUEST: self._permission_handlers,
             }
 
             if hook_type in tool_dicts:
@@ -664,11 +664,15 @@ class HookApp(HandlerRegistry):
             f"Hook '{handler_name}' errored and fail_mode is closed "
             f"({type(error).__name__}: {error})"
         )
-        if hook_event_name == "PreToolUse":
+        if hook_event_name == HookEventName.PRE_TOOL_USE:
             return deny(reason)
-        if hook_event_name == "PermissionRequest":
+        if hook_event_name == HookEventName.PERMISSION_REQUEST:
             return deny_permission(reason)
-        if hook_event_name in ("Stop", "SubagentStop", "PostToolUse"):
+        if hook_event_name in (
+            HookEventName.STOP,
+            HookEventName.SUBAGENT_STOP,
+            HookEventName.POST_TOOL_USE,
+        ):
             return block(reason)
         # SessionStart/End, Notification, PreCompact, UserPromptSubmit, unknown:
         # no block semantics -> fail open even when closed.
@@ -682,13 +686,13 @@ class HookApp(HandlerRegistry):
     def _parse_lifecycle_event(self, hook_type: str, data: dict[str, Any]) -> BaseEvent:
         """Parse data into typed lifecycle event."""
         event_classes: dict[str, type[BaseEvent]] = {
-            "Stop": Stop,
-            "SubagentStop": SubagentStop,
-            "SessionStart": SessionStart,
-            "SessionEnd": SessionEnd,
-            "PreCompact": PreCompact,
-            "UserPromptSubmit": UserPromptSubmit,
-            "Notification": Notification,
+            HookEventName.STOP: Stop,
+            HookEventName.SUBAGENT_STOP: SubagentStop,
+            HookEventName.SESSION_START: SessionStart,
+            HookEventName.SESSION_END: SessionEnd,
+            HookEventName.PRE_COMPACT: PreCompact,
+            HookEventName.USER_PROMPT_SUBMIT: UserPromptSubmit,
+            HookEventName.NOTIFICATION: Notification,
         }
         # Unknown events fall back to GenericEvent (preserves all fields) so any
         # current or future Claude Code hook is dispatchable without a release.
@@ -789,33 +793,51 @@ class HookApp(HandlerRegistry):
 
         for i, (handler, guard) in enumerate(handlers):
             handler_name = handler.__name__
-            # Bind before the guard runs: a guard that raises (common with
-            # field-based guards on unfamiliar GenericEvent payloads) must be
-            # caught below and fail open, not blow up on an unbound timer.
             handler_start = time.perf_counter()
 
-            try:
-                # Check guard condition (supports async guards)
-                if guard is not None:
+            # A `when=` guard is a filter, not the safety check. If it can't be
+            # evaluated (e.g. a field-based guard raising on an unfamiliar
+            # GenericEvent payload), the handler simply doesn't match. Guard
+            # errors ALWAYS fail open (skip the handler), independent of
+            # fail_mode — only the handler body below honors fail_mode.
+            if guard is not None:
+                try:
                     if inspect.iscoroutinefunction(guard):
                         guard_result = await guard(event)
                     else:
                         guard_result = await anyio.to_thread.run_sync(
                             functools.partial(guard, event)
                         )
-                    if not guard_result:
-                        # Emit handler_skip for guard failure
-                        self._emit(
-                            event_type="handler_skip",
-                            hook_id=hook_id,
-                            session_id=session_id,
-                            hook_event_name=hook_event_name,
-                            tool_name=tool_name,
-                            handler_name=handler_name,
-                            skip_reason="guard failed",
-                        )
-                        continue
+                except Exception as e:
+                    self._emit(
+                        event_type="handler_skip",
+                        hook_id=hook_id,
+                        session_id=session_id,
+                        hook_event_name=hook_event_name,
+                        tool_name=tool_name,
+                        handler_name=handler_name,
+                        skip_reason=f"guard error: {type(e).__name__}",
+                    )
+                    print(
+                        f"[fasthooks] Guard for {handler_name} errored "
+                        f"(skipping handler): {e}",
+                        file=sys.stderr,
+                    )
+                    continue
+                if not guard_result:
+                    # Emit handler_skip for guard failure
+                    self._emit(
+                        event_type="handler_skip",
+                        hook_id=hook_id,
+                        session_id=session_id,
+                        hook_event_name=hook_event_name,
+                        tool_name=tool_name,
+                        handler_name=handler_name,
+                        skip_reason="guard failed",
+                    )
+                    continue
 
+            try:
                 # Emit handler_start
                 self._emit(
                     event_type="handler_start",

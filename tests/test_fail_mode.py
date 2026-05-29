@@ -104,6 +104,35 @@ def test_closed_di_miss_denies():
     assert response is not None and response.decision == "deny"
 
 
+# ── guards fail open even in closed mode (a guard is a filter) ───────────────
+
+def test_closed_guard_raise_skips_not_blocks():
+    """A `when=` guard that raises must skip the handler, NOT trip fail-closed.
+
+    A guard is a filter: if it can't evaluate (e.g. field missing on the
+    payload) the handler doesn't match. Blocking the tool because a filter
+    threw would be wrong — only the handler *body* honors fail_mode.
+    """
+    app = HookApp(fail_mode="closed")
+
+    @app.pre_tool("Bash", when=lambda e: e.does_not_exist, fail_mode="closed")
+    def guarded(event):
+        return None
+
+    assert TestClient(app).send(MockEvent.bash(command="ls")) is None
+
+
+def test_closed_guard_false_skips():
+    """A guard returning False skips cleanly (sanity alongside the raise case)."""
+    app = HookApp(fail_mode="closed")
+
+    @app.pre_tool("Bash", when=lambda e: False)
+    def guarded(event):
+        return _raiser()  # never reached
+
+    assert TestClient(app).send(MockEvent.bash(command="ls")) is None
+
+
 # ── no regression on the happy path ──────────────────────────────────────────
 
 def test_closed_does_not_affect_successful_handler():
