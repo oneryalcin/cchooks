@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
@@ -85,7 +85,7 @@ def inject_tool_result(
     )
     user_data: dict[str, Any] = {
         "uuid": str(uuid4()),
-        "timestamp": datetime.now(timezone.utc),
+        "timestamp": datetime.now(UTC),
         "parent_uuid": assistant.uuid,
         "is_synthetic": True,
         "user_type": "external",

@@ -5,7 +5,6 @@ Provides MockBackend and ImmediateBackend for testing hooks that use tasks.
 """
 
 from inspect import iscoroutinefunction
-from time import time
 from typing import Any
 
 import anyio

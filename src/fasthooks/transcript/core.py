@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generator, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from fasthooks.transcript.blocks import ToolResultBlock, ToolUseBlock
 from fasthooks.transcript.entries import (
@@ -578,7 +578,7 @@ class Transcript:
     # === Statistics ===
 
     @property
-    def stats(self) -> "TranscriptStats":
+    def stats(self) -> TranscriptStats:
         """Calculate transcript statistics."""
         return TranscriptStats.from_transcript(self)
 
@@ -735,7 +735,7 @@ class TranscriptStats:
         self.slug = slug
 
     @classmethod
-    def from_transcript(cls, transcript: Transcript) -> "TranscriptStats":
+    def from_transcript(cls, transcript: Transcript) -> TranscriptStats:
         """Calculate statistics from a transcript."""
         from datetime import datetime
 

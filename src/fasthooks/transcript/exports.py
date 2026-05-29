@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from fasthooks.transcript.core import Transcript
-    from fasthooks.transcript.entries import TranscriptEntry
+    from fasthooks.transcript.entries import AssistantMessage, SystemEntry, UserMessage
 
 
 def to_markdown(
@@ -57,7 +57,6 @@ def _format_user_message(
     entry: UserMessage, max_len: int | None
 ) -> list[str]:
     """Format a user message entry."""
-    from fasthooks.transcript.entries import UserMessage
 
     lines = ["## User", ""]
 

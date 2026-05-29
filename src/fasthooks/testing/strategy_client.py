@@ -356,7 +356,8 @@ class StrategyTestClient:
         decisions = [e for e in self._events if e.event_type == "decision"]
         blocks = [e for e in decisions if getattr(e, "decision", None) == "block"]
 
-        assert blocks, f"No block decisions found. Decisions: {[getattr(e, 'decision', None) for e in decisions]}"
+        decisions_list = [getattr(e, "decision", None) for e in decisions]
+        assert blocks, f"No block decisions found. Decisions: {decisions_list}"
 
         if reason_contains:
             reasons = [getattr(e, "reason", "") or "" for e in blocks]
@@ -369,7 +370,8 @@ class StrategyTestClient:
         decisions = [e for e in self._events if e.event_type == "decision"]
         approves = [e for e in decisions if getattr(e, "decision", None) == "approve"]
 
-        assert approves, f"No approve decisions found. Decisions: {[getattr(e, 'decision', None) for e in decisions]}"
+        decisions_list = [getattr(e, "decision", None) for e in decisions]
+        assert approves, f"No approve decisions found. Decisions: {decisions_list}"
 
     def assert_event_emitted(
         self, custom_event_type: str, **payload_match: Any
@@ -385,9 +387,14 @@ class StrategyTestClient:
             if e.event_type == "custom" and e.custom_event_type == custom_event_type
         ]
 
+        custom_event_types = [
+            e.custom_event_type
+            for e in self._events
+            if e.event_type == "custom"
+        ]
         assert custom_events, (
             f"No custom event '{custom_event_type}' found. "
-            f"Custom events: {[e.custom_event_type for e in self._events if e.event_type == 'custom']}"
+            f"Custom events: {custom_event_types}"
         )
 
         if payload_match:

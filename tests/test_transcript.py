@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from fasthooks.depends import Transcript, TranscriptStats
+from fasthooks.depends import Transcript
 
 
 class TestTranscriptBasic:
@@ -156,7 +156,10 @@ class TestTranscriptAutoLoad:
     def test_auto_load_enabled_by_default(self, tmp_path):
         """Transcript auto-loads when path provided."""
         transcript_file = tmp_path / "transcript.jsonl"
-        transcript_file.write_text('{"type": "user", "uuid": "u1", "message": {"role": "user", "content": "hi"}}\n')
+        transcript_file.write_text(
+            '{"type": "user", "uuid": "u1", "message": '
+            '{"role": "user", "content": "hi"}}\n'
+        )
 
         t = Transcript(str(transcript_file))
         # Should be loaded already
@@ -166,7 +169,10 @@ class TestTranscriptAutoLoad:
     def test_auto_load_disabled(self, tmp_path):
         """Transcript doesn't load when auto_load=False."""
         transcript_file = tmp_path / "transcript.jsonl"
-        transcript_file.write_text('{"type": "user", "uuid": "u1", "message": {"role": "user", "content": "hi"}}\n')
+        transcript_file.write_text(
+            '{"type": "user", "uuid": "u1", "message": '
+            '{"role": "user", "content": "hi"}}\n'
+        )
 
         t = Transcript(str(transcript_file), auto_load=False)
         # Should not be loaded yet

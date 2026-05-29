@@ -10,9 +10,9 @@ from fasthooks.tasks import (
     ImmediateBackend,
     InMemoryBackend,
     PendingResults,
-    Tasks,
     Task,
     TaskResult,
+    Tasks,
     TaskStatus,
     task,
 )

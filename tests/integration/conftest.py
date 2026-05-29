@@ -1,8 +1,9 @@
 """Integration test fixtures with real I/O."""
 
 import subprocess
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 class RealGitProject:
