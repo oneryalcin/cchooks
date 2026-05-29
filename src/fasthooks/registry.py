@@ -32,6 +32,7 @@ class HandlerRegistry:
     def __init__(self) -> None:
         self._pre_tool_handlers: dict[str, list[HandlerEntry]] = defaultdict(list)
         self._post_tool_handlers: dict[str, list[HandlerEntry]] = defaultdict(list)
+        self._post_tool_failure_handlers: dict[str, list[HandlerEntry]] = defaultdict(list)
         self._permission_handlers: dict[str, list[HandlerEntry]] = defaultdict(list)
         self._lifecycle_handlers: dict[str, list[HandlerEntry]] = defaultdict(list)
 
@@ -92,6 +93,37 @@ class HandlerRegistry:
             targets = tools if tools else ("*",)
             for tool in targets:
                 self._post_tool_handlers[tool].append((func, when))
+            return func
+
+        return decorator
+
+    def post_tool_failure(
+        self,
+        *tools: str,
+        when: Callable[..., Any] | None = None,
+        fail_mode: FailMode | None = None,
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """Decorator to register a PostToolUseFailure handler.
+
+        Fires after a tool call fails (errors or returns a failure result). The
+        handler receives a :class:`ToolFailureEvent` with ``event.error``,
+        ``event.is_interrupt``, and ``event.duration_ms`` alongside the usual
+        ``tool_name``/``tool_input``. Matches on tool name like ``post_tool``.
+
+        Args:
+            *tools: Tool names to match. If empty, catch-all for ALL tools.
+            when: Optional guard function.
+            fail_mode: Override the app's fail mode for this handler.
+
+        Returns:
+            Decorator function
+        """
+
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            _tag_fail_mode(func, fail_mode)
+            targets = tools if tools else ("*",)
+            for tool in targets:
+                self._post_tool_failure_handlers[tool].append((func, when))
             return func
 
         return decorator

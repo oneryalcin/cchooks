@@ -51,6 +51,8 @@ try:
         hooks.append(f"PreToolUse:{tool}")
     for tool in app._post_tool_handlers:
         hooks.append(f"PostToolUse:{tool}")
+    for tool in app._post_tool_failure_handlers:
+        hooks.append(f"PostToolUseFailure:{tool}")
     for tool in app._permission_handlers:
         hooks.append(f"PermissionRequest:{tool}")
     for event, handlers_list in app._lifecycle_handlers.items():

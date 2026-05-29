@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from fasthooks.events.base import BaseEvent
 
@@ -17,6 +17,26 @@ class ToolEvent(BaseEvent):
     tool_input: dict[str, Any]
     tool_use_id: str
     tool_response: dict[str, Any] | None = None  # Only for PostToolUse events
+
+
+class ToolFailureEvent(ToolEvent):
+    """PostToolUseFailure event: a tool call that errored or failed.
+
+    Carries the failure fields the event adds on top of the usual
+    ``tool_name``/``tool_input``. Every field is defaulted — including the
+    inherited tool fields — so a sparse payload never raises a ValidationError.
+    That matters because tool-event parsing runs before the handler, so a parse
+    failure would fail *open*. Tool-specific arguments are read via
+    ``event.tool_input``; failure events are not parsed into the per-tool
+    accessor classes (Bash, Write, ...).
+    """
+
+    tool_name: str = ""
+    tool_input: dict[str, Any] = Field(default_factory=dict)
+    tool_use_id: str = ""
+    error: str = ""
+    is_interrupt: bool = False
+    duration_ms: int | None = None
 
 
 class Bash(ToolEvent):

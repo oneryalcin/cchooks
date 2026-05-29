@@ -156,6 +156,17 @@ for each — fasthooks mirrors the wire shapes rather than papering over them.
 @app.pre_tool("Bash")                    # Single tool
 @app.pre_tool("Write", "Edit")           # Multiple tools
 @app.post_tool("Bash")                   # After execution
+@app.post_tool_failure("Bash")           # After a failed call
+```
+
+`post_tool_failure` handlers receive a `ToolFailureEvent` with `event.error`,
+`event.is_interrupt`, and `event.duration_ms` alongside the usual
+`event.tool_name` / `event.tool_input`:
+
+```python
+@app.post_tool_failure("Bash")
+def on_bash_error(event):
+    log.warning("Bash failed in %dms: %s", event.duration_ms, event.error)
 ```
 
 ### Lifecycle Decorators

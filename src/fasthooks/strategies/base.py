@@ -183,6 +183,12 @@ class Strategy(ABC):
                 (self._wrap_handler(h, f"post_tool:{tool}"), guard)
                 for h, guard in handlers
             ]
+        # Wrap post_tool_failure handlers
+        for tool, handlers in bp._post_tool_failure_handlers.items():
+            bp._post_tool_failure_handlers[tool] = [
+                (self._wrap_handler(h, f"post_tool_failure:{tool}"), guard)
+                for h, guard in handlers
+            ]
         # Wrap lifecycle handlers
         for event_name, handlers in bp._lifecycle_handlers.items():
             bp._lifecycle_handlers[event_name] = [

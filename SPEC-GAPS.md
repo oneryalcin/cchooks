@@ -52,7 +52,7 @@ Legend: ✅ typed model + decorator · ⚙️ via `@app.on()` only (no typed mod
 | `PostToolUse` | ✅ | |
 | `PermissionRequest` | ✅ | shape exact; missing `updatedPermissions` |
 | `SubagentStop` | ✅ | |
-| `PostToolUseFailure` | ⚙️ | **strong candidate to type** — pairs with fail-mode |
+| `PostToolUseFailure` | ✅ | `@app.post_tool_failure("Bash")` → `ToolFailureEvent` (`.error`) |
 | `PostToolBatch` | ⚙️ | after a parallel batch; can block the loop |
 | `PermissionDenied` | ⚙️ | auto-mode denial; `retry: true` unsupported |
 | `SubagentStart` | ⚙️ | |
@@ -97,9 +97,9 @@ Legend: ✅ typed model + decorator · ⚙️ via `@app.on()` only (no typed mod
 1. **`ask` permission decision** — small, high-value. Add an `ask()`/`ask_permission()`
    builder so a hook can escalate to the user instead of only allow/deny. Wire into the
    PreToolUse `permissionDecision` serialization that already exists.
-2. **Typed `PostToolUseFailure`** — common, and pairs naturally with the fail-mode work
-   (a hook that reacts to a tool that just errored). Add a typed event + `@app.on`-class
-   accessor or a dedicated decorator.
+2. ~~**Typed `PostToolUseFailure`**~~ — ✅ **done.** `@app.post_tool_failure(*tools)`
+   decorator + `ToolFailureEvent` (`.error`, `.is_interrupt`, `.duration_ms`). Fails
+   open on a handler crash (the tool already failed; nothing to block).
 3. **`stopReason`** on `HookResponse` (alongside `continue=False`) and **`additionalContext`
    on PreToolUse/PostToolUse** via `context()`/`allow()`.
 4. Type the next tranche of agentic-loop events (`PostToolBatch`, `PermissionDenied`

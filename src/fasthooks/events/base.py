@@ -23,6 +23,7 @@ class HookEventName(str, Enum):
 
     PRE_TOOL_USE = "PreToolUse"
     POST_TOOL_USE = "PostToolUse"
+    POST_TOOL_USE_FAILURE = "PostToolUseFailure"
     PERMISSION_REQUEST = "PermissionRequest"
     STOP = "Stop"
     SUBAGENT_STOP = "SubagentStop"
