@@ -18,7 +18,6 @@ import anyio
 from fasthooks._internal.io import read_stdin, write_stdout
 from fasthooks.blueprint import Blueprint
 from fasthooks.depends.state import NullState, State
-from fasthooks.depends.transcript import Transcript
 from fasthooks.events.base import BaseEvent
 from fasthooks.events.lifecycle import (
     Notification,
@@ -45,8 +44,6 @@ from fasthooks.logging import EventLogger
 from fasthooks.observability.events import HookObservabilityEvent
 from fasthooks.registry import HandlerEntry, HandlerRegistry
 from fasthooks.responses import BaseHookResponse
-from fasthooks.tasks.backend import BaseBackend, InMemoryBackend
-from fasthooks.tasks.depends import BackgroundTasks, PendingResults, Tasks
 
 # Valid event types for @app.on_observe filter
 VALID_OBSERVER_EVENT_TYPES = frozenset({
@@ -64,6 +61,7 @@ if TYPE_CHECKING:
     from fasthooks.observability.events import HookObservabilityEvent
     from fasthooks.strategies.base import Strategy
     from fasthooks.strategies.registry import StrategyRegistry as StrategyRegistryType
+    from fasthooks.tasks.backend import BaseBackend
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +123,8 @@ class HookApp(HandlerRegistry):
     def task_backend(self) -> BaseBackend:
         """Get the task backend, creating default InMemoryBackend if needed."""
         if self._task_backend is None:
+            from fasthooks.tasks.backend import InMemoryBackend
+
             self._task_backend = InMemoryBackend()
         return self._task_backend
 
@@ -727,13 +727,17 @@ class HookApp(HandlerRegistry):
                 continue
 
             hint = hints.get(param_name)
-            if hint is Transcript:
-                # Cache Transcript per event to avoid redundant loads
-                if "transcript" not in cache:
-                    transcript_path = getattr(event, "transcript_path", None)
-                    cache["transcript"] = Transcript(transcript_path)
-                deps[param_name] = cache["transcript"]
-            elif hint is State:
+            if hint is None:
+                continue
+
+            # Detect injectable deps by qualified name rather than identity so
+            # the pydantic-heavy Transcript/Tasks modules stay lazily imported
+            # (see depends/tasks __init__). get_type_hints() above already
+            # imported the module if — and only if — the handler annotates it.
+            mod = getattr(hint, "__module__", "")
+            name = getattr(hint, "__name__", "")
+
+            if hint is State:
                 if self.state_dir:
                     deps[param_name] = State.for_session(
                         event.session_id,
@@ -742,20 +746,25 @@ class HookApp(HandlerRegistry):
                 else:
                     # No state_dir configured, provide no-op state
                     deps[param_name] = NullState()
-            elif hint is BackgroundTasks:
-                deps[param_name] = BackgroundTasks(
-                    self.task_backend,
-                    event.session_id,
-                )
-            elif hint is Tasks:
-                deps[param_name] = Tasks(
-                    self.task_backend,
-                    event.session_id,
-                )
-            elif hint is PendingResults:
-                deps[param_name] = PendingResults(
-                    self.task_backend,
-                    event.session_id,
-                )
+            elif mod == "fasthooks.transcript.core" and name == "Transcript":
+                # Cache Transcript per event to avoid redundant loads
+                if "transcript" not in cache:
+                    from fasthooks.depends.transcript import Transcript
+
+                    transcript_path = getattr(event, "transcript_path", None)
+                    cache["transcript"] = Transcript(transcript_path)
+                deps[param_name] = cache["transcript"]
+            elif mod == "fasthooks.tasks.depends" and name == "BackgroundTasks":
+                from fasthooks.tasks.depends import BackgroundTasks
+
+                deps[param_name] = BackgroundTasks(self.task_backend, event.session_id)
+            elif mod == "fasthooks.tasks.depends" and name == "Tasks":
+                from fasthooks.tasks.depends import Tasks
+
+                deps[param_name] = Tasks(self.task_backend, event.session_id)
+            elif mod == "fasthooks.tasks.depends" and name == "PendingResults":
+                from fasthooks.tasks.depends import PendingResults
+
+                deps[param_name] = PendingResults(self.task_backend, event.session_id)
 
         return deps
