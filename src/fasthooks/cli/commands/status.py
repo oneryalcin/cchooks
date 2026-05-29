@@ -13,6 +13,7 @@ from fasthooks.cli_utils import (
     find_project_root,
     get_lock_path,
     get_settings_path,
+    hook_identity,
     read_lock,
     read_settings,
     validate_and_introspect,
@@ -59,20 +60,24 @@ def check_settings_sync(
 
     hooks_section = settings.get("hooks", {})
 
-    # Find events that should be in settings based on lock
-    locked_events = set()
-    for h in lock_data.get("hooks_registered", []):
-        if ":" in h:
-            locked_events.add(h.split(":")[0])
-        else:
-            locked_events.add(h)
+    # Find events that should be in settings. http installs register the full
+    # http-compatible catalog (so recipes added later work without reinstall),
+    # not just the app's current handlers — expect that catalog instead.
+    if lock_data.get("hook_type") == "http":
+        from fasthooks.cli_utils import http_all_hooks
 
-    # Find events that have our command in settings
+        expected_hooks = http_all_hooks()
+    else:
+        expected_hooks = lock_data.get("hooks_registered", [])
+    locked_events = {h.split(":")[0] if ":" in h else h for h in expected_hooks}
+
+    # Find events that have our hook in settings (matched by command OR url,
+    # so http installs aren't misreported as out-of-sync).
     found_events = set()
     for event_type, entries in hooks_section.items():
         for entry in entries:
             for hook in entry.get("hooks", []):
-                if hook.get("command") == command:
+                if hook_identity(hook) == command:
                     found_events.add(event_type)
 
     return locked_events == found_events, None

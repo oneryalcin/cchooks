@@ -11,7 +11,7 @@ from fasthooks.events.base import BaseEvent
 class ToolEvent(BaseEvent):
     """Base class for tool-related events (PreToolUse, PostToolUse)."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
     tool_name: str
     tool_input: dict[str, Any]

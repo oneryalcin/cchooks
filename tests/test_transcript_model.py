@@ -1,4 +1,5 @@
 """Tests for rich transcript modeling (fasthooks.transcript)."""
+from datetime import UTC
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,6 @@ from fasthooks.transcript import (
     parse_content_block,
     parse_entry,
 )
-
 
 # Path to sample data
 SAMPLE_DATA_DIR = Path(__file__).parent.parent / "specs" / "data"
@@ -216,7 +216,15 @@ class TestEntries:
             "uuid": "asst-123",
             "message": {
                 "content": [
-                    {"type": "thinking", "thinking": "Let me think...", "signature": ""},
+                    {
+
+                        "type": "thinking",
+
+                        "thinking": "Let me think...",
+
+                        "signature": "",
+
+                    },
                     {"type": "text", "text": "I'll help you"},
                 ],
             },
@@ -449,7 +457,12 @@ class TestTranscriptViews:
                 "uuid": "u2",
                 "message": {
                     "content": [
-                        {"type": "tool_result", "tool_use_id": "t1", "content": "ok", "is_error": False},
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "t1",
+                            "content": "ok",
+                            "is_error": False,
+                        },
                     ],
                 },
             },
@@ -467,7 +480,12 @@ class TestTranscriptViews:
                 "uuid": "u3",
                 "message": {
                     "content": [
-                        {"type": "tool_result", "tool_use_id": "t2", "content": "error", "is_error": True},
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "t2",
+                            "content": "error",
+                            "is_error": True,
+                        },
                     ],
                 },
             },
@@ -524,7 +542,13 @@ class TestNewFeatures:
                 "parentUuid": "u1",
                 "requestId": "req_001",
                 "message": {
-                    "content": [{"type": "thinking", "thinking": "Let me think...", "signature": ""}],
+                    "content": [
+                        {
+                            "type": "thinking",
+                            "thinking": "Let me think...",
+                            "signature": "",
+                        },
+                    ],
                 },
             },
             {
@@ -544,7 +568,17 @@ class TestNewFeatures:
                 "parentUuid": "a2",
                 "message": {
                     "content": [
-                        {"type": "tool_result", "tool_use_id": "t1", "content": "ok", "is_error": False},
+                        {
+
+                            "type": "tool_result",
+
+                            "tool_use_id": "t1",
+
+                            "content": "ok",
+
+                            "is_error": False,
+
+                        },
                     ],
                 },
             },
@@ -600,7 +634,12 @@ class TestNewFeatures:
         path = tmp_path / "compact.jsonl"
         entries = [
             # Archived entries
-            {"type": "user", "uuid": "old1", "parentUuid": None, "message": {"content": "Old message"}},
+            {
+                "type": "user",
+                "uuid": "old1",
+                "parentUuid": None,
+                "message": {"content": "Old message"},
+            },
             {"type": "assistant", "uuid": "old2", "parentUuid": "old1", "message": {"content": []}},
             # Compact boundary
             {
@@ -612,7 +651,12 @@ class TestNewFeatures:
                 "compactMetadata": {"trigger": "manual"},
             },
             # Current entries
-            {"type": "user", "uuid": "new1", "parentUuid": "compact1", "message": {"content": "New message"}},
+            {
+                "type": "user",
+                "uuid": "new1",
+                "parentUuid": "compact1",
+                "message": {"content": "New message"},
+            },
         ]
         with open(path, "w") as f:
             for e in entries:
@@ -698,7 +742,12 @@ class TestNewFeatures:
         entries = [
             {"type": "user", "uuid": "u1", "message": {"content": "Normal"}, "isMeta": False},
             {"type": "user", "uuid": "u2", "message": {"content": "Meta"}, "isMeta": True},
-            {"type": "user", "uuid": "u3", "message": {"content": "Visible only"}, "isVisibleInTranscriptOnly": True},
+            {
+                "type": "user",
+                "uuid": "u3",
+                "message": {"content": "Visible only"},
+                "isVisibleInTranscriptOnly": True,
+            },
         ]
         with open(path, "w") as f:
             for e in entries:
@@ -732,9 +781,19 @@ class TestCRUDOperations:
         path = tmp_path / "chain.jsonl"
         entries = [
             {"type": "user", "uuid": "u1", "parentUuid": None, "message": {"content": "First"}},
-            {"type": "assistant", "uuid": "a1", "parentUuid": "u1", "message": {"content": [{"type": "text", "text": "Response"}]}},
+            {
+                "type": "assistant",
+                "uuid": "a1",
+                "parentUuid": "u1",
+                "message": {"content": [{"type": "text", "text": "Response"}]},
+            },
             {"type": "user", "uuid": "u2", "parentUuid": "a1", "message": {"content": "Second"}},
-            {"type": "assistant", "uuid": "a2", "parentUuid": "u2", "message": {"content": [{"type": "text", "text": "Response2"}]}},
+            {
+                "type": "assistant",
+                "uuid": "a2",
+                "parentUuid": "u2",
+                "message": {"content": [{"type": "text", "text": "Response2"}]},
+            },
         ]
         with open(path, "w") as f:
             for e in entries:
@@ -851,7 +910,6 @@ class TestCRUDOperations:
         """Remove should update lookup indexes."""
         t = transcript_with_chain
         a1 = t.find_by_uuid("a1")
-        tool_use_count_before = len(t.tool_uses)
 
         t.remove(a1)
 
@@ -934,7 +992,12 @@ class TestSerializationRoundTrip:
             "parentUuid": None,
             "message": {
                 "content": [
-                    {"type": "tool_result", "tool_use_id": "t1", "content": "Original", "is_error": False}
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "t1",
+                        "content": "Original",
+                        "is_error": False,
+                    }
                 ]
             },
         }
@@ -968,9 +1031,22 @@ class TestSerializationRoundTrip:
                 "id": "msg_456",
                 "model": "claude-opus-4",
                 "content": [
-                    {"type": "thinking", "thinking": "Let me think...", "signature": "abc"},
+                    {
+
+                        "type": "thinking",
+
+                        "thinking": "Let me think...",
+
+                        "signature": "abc",
+
+                    },
                     {"type": "text", "text": "Response"},
-                    {"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "ls"}},
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "Bash",
+                        "input": {"command": "ls"},
+                    },
                 ],
                 "stop_reason": "tool_use",
                 "usage": {"input_tokens": 100, "output_tokens": 50},
@@ -1146,7 +1222,6 @@ class TestTranscriptQuery:
     def transcript_for_query(self, tmp_path):
         """Create transcript with varied entries for query testing."""
         import json
-        from datetime import datetime, timezone
 
         path = tmp_path / "query_test.jsonl"
         entries = [
@@ -1588,7 +1663,12 @@ class TestInjectToolResult:
         path = tmp_path / "transcript.jsonl"
         entries = [
             {"type": "user", "uuid": "u1", "message": {"role": "user", "content": "msg1"}},
-            {"type": "user", "uuid": "u2", "parentUuid": "u1", "message": {"role": "user", "content": "msg2"}},
+            {
+                "type": "user",
+                "uuid": "u2",
+                "parentUuid": "u1",
+                "message": {"role": "user", "content": "msg2"},
+            },
         ]
         with open(path, "w") as f:
             for e in entries:
@@ -1705,7 +1785,12 @@ class TestExports:
                 "message": {
                     "role": "assistant",
                     "content": [
-                        {"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "ls"}},
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_1",
+                            "name": "Bash",
+                            "input": {"command": "ls"},
+                        },
                     ],
                 },
             },
@@ -1923,11 +2008,12 @@ class TestCriticalEdgeCases:
 
     def test_query_operators(self):
         """Test gt, gte, lt, lte, isnull operators."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
+
         from fasthooks.transcript.query import TranscriptQuery
         
         entries = []
-        base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         
         # Create entries with different timestamps/values
         for i in range(5):

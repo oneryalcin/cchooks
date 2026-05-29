@@ -43,6 +43,10 @@ if __name__ == "__main__":
 - **Blueprints** - Compose handlers from multiple modules
 - **Middleware** - Cross-cutting concerns like timing and logging
 - **Guards** - `@app.pre_tool("Bash", when=lambda e: "sudo" in e.command)`
+- **Generic dispatch** - `@app.on("AnyEvent")` handles hook types without a typed model
+- **HTTP transport** - `fasthooks serve` runs hooks as a persistent server (no per-event process spawn)
+- **Recipes** - `fasthooks add kill-switch` scaffolds ready-made hook patterns
+- **Studio** - `fasthooks studio` is a visual debugger for hook executions
 - **Testing utilities** - `MockEvent` and `TestClient` for easy testing
 
 ## Installation
@@ -59,11 +63,11 @@ uv add fasthooks
 
 ## Quick Start
 
-### 1. Create a hooks project
+### 1. Create a hooks file
 
 ```bash
-fasthooks init my-hooks
-cd my-hooks
+fasthooks init              # writes .claude/hooks.py
+# or choose a path: fasthooks init -p hooks.py
 ```
 
 ### 2. Edit hooks.py
@@ -95,18 +99,17 @@ if __name__ == "__main__":
     app.run()
 ```
 
-### 3. Configure Claude Code
+### 3. Register with Claude Code
 
-Add to your `settings.json`:
+`fasthooks install` wires every event your handlers use into Claude Code's
+`settings.json` for you — no hand-editing:
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [{"command": "python /path/to/hooks.py"}],
-    "Stop": [{"command": "python /path/to/hooks.py"}]
-  }
-}
+```bash
+fasthooks install .claude/hooks.py     # project scope (default)
+fasthooks status                       # verify what's registered
 ```
+
+Use `--scope user|local` to install elsewhere, and `fasthooks uninstall` to remove.
 
 ## API Reference
 
@@ -124,6 +127,9 @@ return block("Continue working on X")       # For Stop hooks
 return approve_permission()                 # Auto-approve permission
 return approve_permission(modify={"command": "safe"})  # Approve with modified input
 return deny_permission("Not allowed")       # Deny permission
+
+# For SessionStart / UserPromptSubmit - inject text into Claude's context
+return context("Project uses Python 3.12", hook_event="SessionStart")
 ```
 
 ### Tool Decorators
@@ -167,6 +173,23 @@ def handle_edit(event):
     event.file_path    # str
     event.old_string   # str
     event.new_string   # str
+```
+
+### Generic Events
+
+Claude Code ships new hook events regularly. `@app.on("EventName")` dispatches
+any event — even ones without a dedicated typed model — so you don't have to
+wait for a fasthooks release. Read event-specific fields straight off `event`:
+
+```python
+@app.on("FileChanged")
+def on_file_changed(event):
+    if event.file_path.endswith(".py"):
+        return deny("Edit .py via the agent, not directly")
+
+@app.on("PostToolUseFailure", when=lambda e: e.tool_name == "Bash")
+def on_bash_failure(event):
+    ...
 ```
 
 ### Dependency Injection
@@ -300,24 +323,54 @@ def test_no_rm_rf():
     assert response.decision == "deny"
 ```
 
+## Recipes
+
+Scaffold ready-made hook patterns into your project:
+
+```bash
+fasthooks add kill-switch    # halt all tool calls while a sentinel file exists
+fasthooks add steer          # surface a one-time note to the agent, then clear it
+```
+
+## HTTP Transport
+
+By default Claude Code spawns a fresh process per hook event. For lower latency
+(or shared in-memory state across events) run your hooks as a persistent server
+(`pip install fasthooks[server]`):
+
+```bash
+fasthooks serve .claude/hooks.py                 # http://127.0.0.1:8765
+fasthooks serve .claude/hooks.py --reload        # auto-reload on changes
+
+# Point Claude Code at the running server:
+fasthooks install .claude/hooks.py --http        # add --auth to require a shared secret
+```
+
+`serve` binds to loopback by default; a non-loopback bind requires `--token`
+(or `$FASTHOOKS_TOKEN`) unless you pass `--allow-unauthenticated`. You can also
+serve programmatically: `app.serve(host="127.0.0.1", port=8765, token=...)`.
+
+## Studio
+
+A visual debugger for hook executions — inspect events, decisions, and timings
+(`pip install fasthooks[studio]`):
+
+```bash
+fasthooks studio            # opens http://127.0.0.1:5555
+fasthooks studio --open     # and launch a browser
+```
+
 ## CLI
 
 ```bash
-# Initialize a new project (creates hooks.py, pyproject.toml, .claude/settings.json)
-fasthooks init my-hooks
-
-# Run hooks (called by Claude Code)
-fasthooks run hooks.py
-
-# Generate sample event JSON for testing
-fasthooks example bash
-fasthooks example bash_dangerous > event.json
-
-# Test hooks locally
-fasthooks run hooks.py --input event.json
-
-# Show help
-fasthooks --help
+fasthooks init                      # create .claude/hooks.py
+fasthooks install hooks.py          # register with Claude Code (--scope, --http, --auth)
+fasthooks status                    # show what's registered and validate
+fasthooks uninstall                 # remove hooks (--scope)
+fasthooks add <recipe>              # scaffold a recipe (kill-switch, steer)
+fasthooks serve hooks.py            # run as a persistent HTTP server
+fasthooks studio                    # launch the visual debugger
+fasthooks --help                    # full help
 ```
 
 ## License

@@ -10,6 +10,7 @@ import socket
 import webbrowser
 from contextlib import closing
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 
@@ -27,7 +28,7 @@ def _socket_is_open(host: str, port: int) -> bool:
         return sock.connect_ex((host, port)) == 0
 
 
-async def db_watcher(db_path: Path, app: any) -> None:
+async def db_watcher(db_path: Path, app: Any) -> None:
     """Poll DB file for changes and notify clients."""
     last_stat = None
 
@@ -38,7 +39,7 @@ async def db_watcher(db_path: Path, app: any) -> None:
 
             if last_stat is None:
                 logger.info(f"Database file found: {db_path}")
-                await app.notify_clients(json.dumps({"type": "db_updated"}))
+                await app.state.notify_clients(json.dumps({"type": "db_updated"}))
             else:
                 time_changed = abs(current_stat.st_mtime - last_stat.st_mtime) > 0.1
                 size_changed = current_stat.st_size != last_stat.st_size
@@ -46,14 +47,14 @@ async def db_watcher(db_path: Path, app: any) -> None:
 
                 if time_changed or size_changed or inode_changed:
                     logger.debug("Database changed, notifying clients")
-                    await app.notify_clients(json.dumps({"type": "db_updated"}))
+                    await app.state.notify_clients(json.dumps({"type": "db_updated"}))
 
             last_stat = current_stat
 
         except FileNotFoundError:
             if last_stat is not None:
                 logger.info(f"Database file deleted: {db_path}")
-                await app.notify_clients(json.dumps({"type": "db_updated"}))
+                await app.state.notify_clients(json.dumps({"type": "db_updated"}))
             last_stat = None
             await asyncio.sleep(1)  # Wait longer if file missing
 
@@ -131,7 +132,6 @@ def main() -> None:
         app=app,
         host=args.host,
         port=args.port,
-        loop=loop,
         log_level="warning",  # Quieter uvicorn logs
     )
     server = uvicorn.Server(config)

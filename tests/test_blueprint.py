@@ -132,7 +132,7 @@ class TestBlueprintInclude:
         assert calls == ["checked"]  # app_handler never ran
         stdout.seek(0)
         result = json.loads(stdout.read())
-        assert result["decision"] == "deny"
+        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 class TestBlueprintLifecycle:

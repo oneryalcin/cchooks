@@ -1,7 +1,8 @@
 """Common test fixtures."""
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from fasthooks.testing import MockEvent
 

@@ -97,11 +97,37 @@ def install(
             help="Reinstall even if already installed",
         ),
     ] = False,
+    http: Annotated[
+        bool,
+        typer.Option(
+            "--http",
+            help="Register an http hook (point at a running 'fasthooks serve')",
+        ),
+    ] = False,
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Server host for --http"),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", help="Server port for --http"),
+    ] = 8765,
+    auth: Annotated[
+        bool,
+        typer.Option(
+            "--auth",
+            help="Generate a shared secret and require it (http mode only)",
+        ),
+    ] = False,
 ) -> None:
     """Register hooks with Claude Code."""
     from fasthooks.cli.commands.install import run_install
 
-    raise typer.Exit(code=run_install(path, scope, force, console))
+    raise typer.Exit(
+        code=run_install(
+            path, scope, force, console, http=http, host=host, port=port, auth=auth
+        )
+    )
 
 
 @app.command()
@@ -136,6 +162,79 @@ def status(
     from fasthooks.cli.commands.status import run_status
 
     raise typer.Exit(code=run_status(scope, console))
+
+
+@app.command()
+def add(
+    recipe: Annotated[
+        str,
+        typer.Argument(help="Recipe name (e.g. kill-switch, steer)"),
+    ],
+    recipes_dir: Annotated[
+        str,
+        typer.Option("--dir", help="Directory to scaffold the recipe config into"),
+    ] = ".claude/hooks/recipes",
+    force: Annotated[
+        bool,
+        typer.Option("--force", "-f", help="Overwrite an existing recipe config"),
+    ] = False,
+) -> None:
+    """Scaffold a recipe (e.g. kill-switch) into your project."""
+    from fasthooks.cli.commands.add import run_add
+
+    raise typer.Exit(code=run_add(recipe, recipes_dir, force, console))
+
+
+@app.command()
+def serve(
+    path: Annotated[
+        str,
+        typer.Argument(help="Path to hooks.py file"),
+    ],
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Host to bind to"),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", help="Port to bind to"),
+    ] = 8765,
+    token: Annotated[
+        str | None,
+        typer.Option(
+            "--token",
+            help="Require this shared secret (defaults to $FASTHOOKS_TOKEN)",
+        ),
+    ] = None,
+    allow_unauthenticated: Annotated[
+        bool,
+        typer.Option(
+            "--allow-unauthenticated",
+            help="Permit a non-loopback bind with no token (unsafe)",
+        ),
+    ] = False,
+    reload: Annotated[
+        bool,
+        typer.Option(
+            "--reload",
+            help="Auto-reload on handler/recipe changes (needs fasthooks[reload])",
+        ),
+    ] = False,
+) -> None:
+    """Run hooks as a persistent HTTP server (Claude Code http hook)."""
+    from fasthooks.cli.commands.serve import run_serve
+
+    raise typer.Exit(
+        code=run_serve(
+            path,
+            host,
+            port,
+            console,
+            token=token,
+            allow_unauthenticated=allow_unauthenticated,
+            reload=reload,
+        )
+    )
 
 
 @app.command()

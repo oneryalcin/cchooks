@@ -271,7 +271,13 @@ class TestMergeHooksConfig:
                 ]
             }
         }
-        new = {"hooks": {"PreToolUse": [{"matcher": "Bash|Edit", "hooks": [{"command": "our.py"}]}]}}
+        new = {
+            "hooks": {
+                "PreToolUse": [
+                    {"matcher": "Bash|Edit", "hooks": [{"command": "our.py"}]}
+                ]
+            }
+        }
         result = merge_hooks_config(existing, new, "our.py")
         assert len(result["hooks"]["PreToolUse"]) == 2
         matchers = [e["matcher"] for e in result["hooks"]["PreToolUse"]]
@@ -703,3 +709,116 @@ class TestGenerateSettings:
         hooks = ["Notification:*"]
         result = generate_settings(hooks, "cmd")
         assert result["hooks"]["Notification"][0]["matcher"] == "*"
+
+
+class TestHttpHookEntries:
+    """http hook type: generate/merge/remove identify entries by url, not command."""
+
+    def test_generate_settings_http(self):
+        result = generate_settings(
+            ["PreToolUse:Bash", "Stop"], "http://127.0.0.1:8765/", hook_type="http"
+        )
+        pre = result["hooks"]["PreToolUse"][0]["hooks"][0]
+        assert pre == {"type": "http", "url": "http://127.0.0.1:8765/"}
+        stop = result["hooks"]["Stop"][0]["hooks"][0]
+        assert stop["type"] == "http"
+        assert "command" not in stop
+
+    def test_merge_replaces_our_http_entries_only(self):
+        url = "http://127.0.0.1:8765/"
+        existing = {
+            "hooks": {
+                "Stop": [
+                    {"hooks": [{"type": "http", "url": url}]},  # ours (stale)
+                    {"hooks": [{"type": "command", "command": "other.py"}]},  # theirs
+                ]
+            }
+        }
+        new = generate_settings(["Stop"], url, hook_type="http")
+        result = merge_hooks_config(existing, new, url)
+        stop_hooks = [h for e in result["hooks"]["Stop"] for h in e["hooks"]]
+        # exactly one of ours (no dup) + the foreign command entry preserved
+        assert sum(h.get("url") == url for h in stop_hooks) == 1
+        assert any(h.get("command") == "other.py" for h in stop_hooks)
+
+    def test_http_all_hooks_covers_common_events_with_matchers(self):
+        from fasthooks.cli_utils import http_all_hooks
+
+        hooks = http_all_hooks()
+        # tool events carry a "*" matcher; lifecycle events are bare
+        assert "PreToolUse:*" in hooks
+        assert "UserPromptSubmit" in hooks
+        assert "Stop" in hooks
+        # SessionStart/Setup don't support http hooks -> excluded
+        assert not any(h.split(":")[0] == "SessionStart" for h in hooks)
+
+    def test_generate_settings_http_with_auth(self):
+        result = generate_settings(
+            ["Stop"],
+            "http://127.0.0.1:8765/",
+            hook_type="http",
+            auth_env="FASTHOOKS_TOKEN",
+        )
+        entry = result["hooks"]["Stop"][0]["hooks"][0]
+        assert entry["headers"] == {"Authorization": "Bearer ${FASTHOOKS_TOKEN}"}
+        assert entry["allowedEnvVars"] == ["FASTHOOKS_TOKEN"]
+
+    def test_remove_hooks_by_url(self):
+        url = "http://127.0.0.1:8765/"
+        settings = {
+            "hooks": {
+                "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "http", "url": url}]}],
+                "Stop": [{"hooks": [{"type": "command", "command": "keep.py"}]}],
+            }
+        }
+        result, removed = remove_hooks_by_command(settings, url)
+        assert removed == 1
+        assert "PreToolUse" not in result["hooks"]  # emptied -> dropped
+        assert result["hooks"]["Stop"][0]["hooks"][0]["command"] == "keep.py"
+
+
+class TestGenericToolEventCoverage:
+    """@app.on('PreToolUse') must install as a catch-all, even beside a
+    specific @app.pre_tool('Bash') (regression: coverage was collapsing to Bash)."""
+
+    def test_bare_tool_event_becomes_catch_all(self):
+        result = generate_settings(["PreToolUse"], "cmd")
+        assert result["hooks"]["PreToolUse"][0]["matcher"] == "*"
+
+    def test_bare_plus_specific_tool_event_is_catch_all(self):
+        result = generate_settings(["PreToolUse:Bash", "PreToolUse"], "cmd")
+        assert result["hooks"]["PreToolUse"][0]["matcher"] == "*"
+
+    def test_bare_non_tool_event_stays_matcherless(self):
+        result = generate_settings(["FileChanged"], "cmd")
+        entry = result["hooks"]["FileChanged"][0]
+        assert "matcher" not in entry
+
+
+class TestHttpInstallWarnings:
+    """install --http should warn when handlers target events with no http support."""
+
+    def test_warns_on_unsupported_event_handler(self, tmp_path):
+        import io as _io
+
+        from rich.console import Console
+
+        from fasthooks.cli.commands.install import run_install
+
+        hooks = tmp_path / ".claude" / "hooks.py"
+        hooks.parent.mkdir(parents=True)
+        hooks.write_text(
+            "from fasthooks import HookApp\n"
+            "app = HookApp()\n"
+            "@app.on_session_start()\n"  # SessionStart: no http support
+            "def s(event):\n    return None\n"
+            "@app.pre_tool('Bash')\n"
+            "def b(event):\n    return None\n"
+        )
+        buf = _io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        code = run_install(str(hooks), "project", False, console, http=True)
+        out = buf.getvalue()
+        assert code == 0
+        assert "won't fire over http" in out
+        assert "SessionStart" in out

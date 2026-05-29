@@ -21,6 +21,7 @@ After installing, restart Claude Code for hooks to take effect.
 """
 
 from fasthooks import HookApp, deny
+from fasthooks.recipes import include_recipes
 
 app = HookApp()
 
@@ -40,8 +41,16 @@ def check_bash(event):
 # @app.on_session_start()
 
 
+# Load any recipes scaffolded with `fasthooks add <name>` (drop-in, no edits
+# here). Keep this after your own handlers.
+include_recipes(app)
+
+
 if __name__ == "__main__":
+    # Command-hook mode (one process per event):
     app.run()
+    # Or run as a persistent HTTP server (faster; needs fasthooks[server]):
+    # app.serve()
 '''
 
 

@@ -11,7 +11,7 @@ from fasthooks.events.base import BaseEvent
 class Stop(BaseEvent):
     """Stop event - main agent finished responding."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
     stop_hook_active: bool = False
 
@@ -19,7 +19,7 @@ class Stop(BaseEvent):
 class SubagentStop(BaseEvent):
     """SubagentStop event - subagent finished responding."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
     agent_id: str | None = None
     stop_hook_active: bool = False
@@ -28,7 +28,7 @@ class SubagentStop(BaseEvent):
 class SessionStart(BaseEvent):
     """SessionStart event - session begins or resumes."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
     source: str  # startup, resume, clear, compact
 
@@ -36,7 +36,7 @@ class SessionStart(BaseEvent):
 class SessionEnd(BaseEvent):
     """SessionEnd event - session ends."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
     reason: str  # clear, logout, prompt_input_exit, other
 
@@ -44,7 +44,7 @@ class SessionEnd(BaseEvent):
 class PreCompact(BaseEvent):
     """PreCompact event - before context compaction."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
     trigger: str  # manual, auto
     custom_instructions: str | None = None
@@ -53,7 +53,7 @@ class PreCompact(BaseEvent):
 class UserPromptSubmit(BaseEvent):
     """UserPromptSubmit event - user submits a prompt."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
     prompt: str
 
@@ -61,7 +61,7 @@ class UserPromptSubmit(BaseEvent):
 class Notification(BaseEvent):
     """Notification event - notification sent."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
     message: str
     notification_type: str  # permission_prompt, idle_prompt, etc.
@@ -70,7 +70,7 @@ class Notification(BaseEvent):
 class PermissionRequest(BaseEvent):
     """PermissionRequest event - permission dialog shown."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
     tool_name: str
     tool_input: dict[str, Any]

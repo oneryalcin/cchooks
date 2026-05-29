@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
@@ -134,7 +134,7 @@ class UserMessage(Entry):
 
         data: dict[str, Any] = {
             "uuid": str(uuid4()),
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
             "is_synthetic": True,
             "user_type": "external",
         }
@@ -316,7 +316,7 @@ class AssistantMessage(Entry):
 
         data: dict[str, Any] = {
             "uuid": str(uuid4()),
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
             "request_id": f"req_{secrets.token_hex(12)}",
             "is_synthetic": True,
             "user_type": "external",

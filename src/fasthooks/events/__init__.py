@@ -1,5 +1,5 @@
 """Event models for Claude Code hooks."""
-from fasthooks.events.base import BaseEvent
+from fasthooks.events.base import BaseEvent, GenericEvent
 from fasthooks.events.lifecycle import (
     Notification,
     PermissionRequest,
@@ -26,6 +26,7 @@ from fasthooks.events.tools import (
 __all__ = [
     # Base
     "BaseEvent",
+    "GenericEvent",
     # Tools
     "Bash",
     "Edit",

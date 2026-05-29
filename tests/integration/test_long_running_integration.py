@@ -1,8 +1,6 @@
 """Integration tests for LongRunningStrategy with real git."""
 
 import json
-import pytest
-from pathlib import Path
 from typing import Any
 
 from fasthooks.strategies import LongRunningStrategy

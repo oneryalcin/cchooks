@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from fasthooks import HookApp, deny
 from fasthooks.observability import (
     BaseObserver,

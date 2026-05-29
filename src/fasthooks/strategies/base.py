@@ -16,6 +16,24 @@ from fasthooks import Blueprint
 
 from ..observability import DecisionEvent, ErrorEvent, ObservabilityEvent
 
+DecisionLiteral = Literal["approve", "deny", "block"]
+
+
+def _decision_of(result: object) -> DecisionLiteral:
+    """Map a hook response to its observability decision.
+
+    ``HookResponse`` exposes ``.decision`` directly. ``PermissionHookResponse``
+    uses ``.behavior`` ("allow"/"deny") instead, so a permission deny is
+    recorded as a deny rather than silently defaulting to approve. Anything
+    else (context responses, bare allows) is treated as approve.
+    """
+    decision = getattr(result, "decision", None)
+    if decision == "deny" or getattr(result, "behavior", None) == "deny":
+        return "deny"
+    if decision == "block":
+        return "block"
+    return "approve"
+
 
 class StrategyMeta(BaseModel):
     """Strategy metadata."""
@@ -206,7 +224,7 @@ class Strategy(ABC):
 
                 # Emit decision if result returned
                 if result is not None:
-                    decision = getattr(result, "decision", "approve")
+                    decision = _decision_of(result)
                     self._emit(
                         DecisionEvent(
                             session_id=self._current_session_id,

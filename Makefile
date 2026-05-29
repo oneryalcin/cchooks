@@ -17,7 +17,7 @@ format: ## Format code
 	uv run ruff check --fix src/fasthooks tests
 
 typecheck: ## Run type checker
-	uv run mypy src/fasthooks
+	uv run --extra studio mypy src/fasthooks
 
 check: lint typecheck test ## Run all checks (lint, typecheck, test)
 

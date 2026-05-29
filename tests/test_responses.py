@@ -129,3 +129,38 @@ class TestDenyPermission:
         response = deny_permission("Stop!", interrupt=True)
         data = json.loads(response.to_json())
         assert data["hookSpecificOutput"]["decision"]["interrupt"] is True
+
+
+class TestPreToolUseFormat:
+    """PreToolUse uses hookSpecificOutput.permissionDecision (top-level
+    decision/reason is deprecated for that event)."""
+
+    def test_deny_uses_permission_decision(self):
+        out = json.loads(deny("nope").to_json("PreToolUse"))
+        hso = out["hookSpecificOutput"]
+        assert hso["hookEventName"] == "PreToolUse"
+        assert hso["permissionDecision"] == "deny"
+        assert hso["permissionDecisionReason"] == "nope"
+        assert "decision" not in out  # not the deprecated top-level form
+
+    def test_block_maps_to_deny(self):
+        hso = json.loads(block("go on").to_json("PreToolUse"))["hookSpecificOutput"]
+        assert hso["permissionDecision"] == "deny"
+
+    def test_bare_allow_is_noop(self):
+        # No opinion -> empty output -> normal permission flow (unchanged)
+        assert allow().to_json("PreToolUse") == ""
+
+    def test_allow_with_modify_auto_approves(self):
+        hso = json.loads(allow(modify={"command": "ls -a"}).to_json("PreToolUse"))[
+            "hookSpecificOutput"
+        ]
+        assert hso["permissionDecision"] == "allow"
+        assert hso["updatedInput"] == {"command": "ls -a"}
+
+    def test_other_events_keep_top_level_decision(self):
+        # Stop still uses top-level decision/reason
+        out = json.loads(block("keep going").to_json("Stop"))
+        assert out["decision"] == "block"
+        assert out["reason"] == "keep going"
+        assert "hookSpecificOutput" not in out

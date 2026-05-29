@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(gh api:*)",
+      "Bash(xargs ls:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(wc:*)",
+      "Bash(cat:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(git commit:*)",
+      "Bash(uv run python:*)",
+      "Bash(uv run ruff check:*)",
+      "Bash(uv run mypy:*)",
+      "Bash(# Find agent sidechains ls ~/.claude/projects/-private-tmp-skills-platform/agent-*.jsonl)",
+      "Bash(uv run:*)",
+      "Bash(docker compose run:*)",
+      "Bash(ls:*)",
+      "Bash(git push:*)",
+      "WebSearch",
+      "Bash(gh repo clone:*)",
+      "Bash(sqlite3:*)",
+      "mcp__chrome-devtools__take_snapshot",
+      "mcp__chrome-devtools__click",
+      "mcp__chrome-devtools__take_screenshot",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)"
+    ]
+  }
+}

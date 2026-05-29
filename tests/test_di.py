@@ -27,7 +27,12 @@ class TestDITranscript:
                 "message": {
                     "role": "assistant",
                     "content": [
-                        {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}},
+                        {
+                            "type": "tool_use",
+                            "id": "t1",
+                            "name": "Bash",
+                            "input": {"command": "ls"},
+                        },
                     ],
                     "usage": {"input_tokens": 100, "output_tokens": 50},
                 },
@@ -157,7 +162,10 @@ class TestDICombined:
     def test_multiple_deps_injected(self, tmp_path):
         """Multiple dependencies can be injected."""
         transcript_file = tmp_path / "transcript.jsonl"
-        transcript_file.write_text('{"type": "user", "uuid": "u1", "message": {"role": "user", "content": "hi"}}\n')
+        transcript_file.write_text(
+            '{"type": "user", "uuid": "u1", "message": '
+            '{"role": "user", "content": "hi"}}\n'
+        )
 
         app = HookApp(state_dir=str(tmp_path))
         captured = []

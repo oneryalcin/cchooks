@@ -1,10 +1,13 @@
 """Main HookApp class."""
+
 from __future__ import annotations
 
 import functools
+import hmac
 import inspect
 import json
 import logging
+import os
 import sys
 import time
 import warnings
@@ -15,11 +18,10 @@ from uuid import uuid4
 
 import anyio
 
-from fasthooks._internal.io import read_stdin, write_stdout
+from fasthooks._internal.io import read_stdin, serialize_response, write_stdout
 from fasthooks.blueprint import Blueprint
 from fasthooks.depends.state import NullState, State
-from fasthooks.depends.transcript import Transcript
-from fasthooks.events.base import BaseEvent
+from fasthooks.events.base import BaseEvent, GenericEvent
 from fasthooks.events.lifecycle import (
     Notification,
     PreCompact,
@@ -45,25 +47,26 @@ from fasthooks.logging import EventLogger
 from fasthooks.observability.events import HookObservabilityEvent
 from fasthooks.registry import HandlerEntry, HandlerRegistry
 from fasthooks.responses import BaseHookResponse
-from fasthooks.tasks.backend import BaseBackend, InMemoryBackend
-from fasthooks.tasks.depends import BackgroundTasks, PendingResults, Tasks
 
 # Valid event types for @app.on_observe filter
-VALID_OBSERVER_EVENT_TYPES = frozenset({
-    "hook_start",
-    "hook_end",
-    "hook_error",
-    "handler_start",
-    "handler_end",
-    "handler_skip",
-    "handler_error",
-})
+VALID_OBSERVER_EVENT_TYPES = frozenset(
+    {
+        "hook_start",
+        "hook_end",
+        "hook_error",
+        "handler_start",
+        "handler_end",
+        "handler_skip",
+        "handler_error",
+    }
+)
 
 if TYPE_CHECKING:
     from fasthooks.observability.base import BaseObserver
     from fasthooks.observability.events import HookObservabilityEvent
     from fasthooks.strategies.base import Strategy
     from fasthooks.strategies.registry import StrategyRegistry as StrategyRegistryType
+    from fasthooks.tasks.backend import BaseBackend
 
 logger = logging.getLogger(__name__)
 
@@ -121,10 +124,15 @@ class HookApp(HandlerRegistry):
         self._observers: list[BaseObserver] = []
         self._callback_observers: list[tuple[Callable[..., Any], str | None]] = []
 
+        # Shared secret required by the http transport (set by serve()).
+        self._auth_token: str | None = None
+
     @property
     def task_backend(self) -> BaseBackend:
         """Get the task backend, creating default InMemoryBackend if needed."""
         if self._task_backend is None:
+            from fasthooks.tasks.backend import InMemoryBackend
+
             self._task_backend = InMemoryBackend()
         return self._task_backend
 
@@ -189,15 +197,19 @@ class HookApp(HandlerRegistry):
 
         return decorator
 
-    def _emit(self, event: HookObservabilityEvent) -> None:
-        """Dispatch event to all observers.
+    def _emit(self, event_type: str, **fields: Any) -> None:
+        """Build and dispatch an observability event to all observers.
 
-        - No-op if no observers registered (zero overhead)
+        - No-op if no observers registered: the event object is not even
+          constructed, so the common (no-observer) path pays nothing — not
+          even building a pydantic model per hook call.
         - Swallows observer exceptions (logs warning)
         """
-        # Zero overhead when unused
+        # Zero overhead when unused — return before constructing the event.
         if not self._observers and not self._callback_observers:
             return
+
+        event = HookObservabilityEvent(event_type=event_type, **fields)
 
         # Dispatch to class-based observers
         for observer in self._observers:
@@ -347,11 +359,193 @@ class HookApp(HandlerRegistry):
 
         # Write output
         if response:
-            write_stdout(response, stdout)
+            write_stdout(response, stdout, data.get("hook_event_name"))
 
-    async def _dispatch(
-        self, data: dict[str, Any]
-    ) -> BaseHookResponse | None:
+    # ═══════════════════════════════════════════════════════════════
+    # HTTP server transport (Claude Code "http" hooks)
+    # ═══════════════════════════════════════════════════════════════
+
+    def serve(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 8765,
+        *,
+        token: str | None = None,
+        allow_unauthenticated: bool = False,
+        log_level: str = "warning",
+    ) -> None:
+        """Run the hook app as a persistent HTTP server.
+
+        The command-hook model (:meth:`run`) spawns a fresh Python process —
+        and re-pays interpreter + import cost — on *every* tool call. As a
+        Claude Code ``http`` hook instead, the app starts once and answers
+        every event over HTTP in milliseconds. Point a ``type: "http"`` hook
+        at ``http://{host}:{port}/`` (one endpoint handles all events; dispatch
+        keys off ``hook_event_name``).
+
+        Requires the ``server`` extra: ``pip install 'fasthooks[server]'``.
+
+        The endpoint dispatches whatever event JSON it receives into your
+        (arbitrary) handlers. Set ``token`` (or the ``FASTHOOKS_TOKEN`` env var)
+        to require an ``Authorization: Bearer <token>`` header — recommended
+        for any non-loopback bind, and worthwhile even on loopback (a local
+        process or a browser page can POST to localhost). ``fasthooks install
+        --http --auth`` generates a token and wires it into the hook config.
+
+        Args:
+            host: Interface to bind (default: loopback only).
+            port: Port to bind.
+            token: Shared secret to require. Defaults to ``$FASTHOOKS_TOKEN``.
+            allow_unauthenticated: Permit a non-loopback bind without a token.
+                Off by default: binding a public host with no auth is refused.
+            log_level: uvicorn log level.
+        """
+        self._auth_token = token or os.environ.get("FASTHOOKS_TOKEN") or None
+
+        # An unauthenticated non-loopback bind exposes arbitrary hook execution
+        # to any reachable client. Fail closed unless explicitly allowed.
+        # Checked before importing uvicorn so the refusal is fast and unconditional.
+        # Only genuine loopback addresses bypass the auth requirement. An empty
+        # or wildcard host (""/"0.0.0.0"/"::") binds all interfaces and must NOT
+        # be treated as loopback.
+        is_loopback = host in ("127.0.0.1", "localhost", "::1")
+        if not self._auth_token and not is_loopback:
+            if not allow_unauthenticated:
+                raise RuntimeError(
+                    f"Refusing to bind non-loopback host {host!r} without "
+                    "authentication. Set a token (FASTHOOKS_TOKEN or "
+                    "`install --http --auth`), or pass allow_unauthenticated=True "
+                    "(`serve --allow-unauthenticated`) to override."
+                )
+            print(
+                f"[fasthooks] WARNING: serving on {host!r} with NO authentication "
+                "(--allow-unauthenticated) — any client that can reach this port "
+                "can trigger your hooks.",
+                file=sys.stderr,
+            )
+
+        try:
+            import uvicorn
+        except ImportError as e:  # pragma: no cover - import guard
+            raise RuntimeError(
+                "serve() requires uvicorn. Install with: "
+                "pip install 'fasthooks[server]'"
+            ) from e
+
+        # interface="asgi3": _asgi_app is a bound method, which uvicorn's
+        # auto-detection otherwise mistakes for the legacy ASGI 2.0 (one-arg
+        # factory) protocol. Be explicit.
+        uvicorn.run(
+            self._asgi_app,
+            host=host,
+            port=port,
+            log_level=log_level,
+            interface="asgi3",
+        )
+
+    async def _asgi_app(
+        self,
+        scope: dict[str, Any],
+        receive: Callable[[], Any],
+        send: Callable[[dict[str, Any]], Any],
+    ) -> None:
+        """Minimal ASGI handler backing :meth:`serve`.
+
+        Claude Code ``http`` hooks POST the event JSON and expect the same
+        JSON output format as command hooks. Per the hooks reference, any
+        non-2xx/connection error fails open (execution continues), so on any
+        internal error we return an empty 200 ("no decision") rather than
+        risk blocking the agent loop.
+        """
+        if scope["type"] == "lifespan":
+            while True:
+                message = await receive()
+                if message["type"] == "lifespan.startup":
+                    await send({"type": "lifespan.startup.complete"})
+                elif message["type"] == "lifespan.shutdown":
+                    await send({"type": "lifespan.shutdown.complete"})
+                    return
+        if scope["type"] != "http":
+            return
+
+        # Claude Code only ever POSTs hook events; reject anything else so the
+        # endpoint isn't a general-purpose surface.
+        if scope.get("method", "GET") != "POST":
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 405,
+                    "headers": [(b"allow", b"POST")],
+                }
+            )
+            await send({"type": "http.response.body", "body": b""})
+            return
+
+        # Enforce the shared secret before reading/dispatching anything, so a
+        # forged request can't reach handler code. Constant-time compare.
+        if self._auth_token is not None:
+            presented = ""
+            for name, value in scope.get("headers", []):
+                if name == b"authorization":
+                    presented = value.decode("latin-1")
+                    break
+            expected = f"Bearer {self._auth_token}"
+            if not hmac.compare_digest(presented, expected):
+                await send({"type": "http.response.start", "status": 401, "headers": []})
+                await send({"type": "http.response.body", "body": b""})
+                return
+
+        # Read the request body with a hard cap to bound memory. The cap is
+        # generous (25 MiB) so legitimate large payloads — e.g. a PreToolUse
+        # Write with big file content — still reach a protective handler rather
+        # than 413ing (Claude Code treats non-2xx as fail-open, which would skip
+        # the guard). Only pathological/abusive bodies exceed it; for those the
+        # client controls its own payload anyway, so the fail-open is not an
+        # escalation.
+        max_body = 25 * 1024 * 1024  # 25 MiB
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            message = await receive()
+            chunk = message.get("body", b"")
+            total += len(chunk)
+            if total > max_body:
+                await send({"type": "http.response.start", "status": 413, "headers": []})
+                await send({"type": "http.response.body", "body": b""})
+                return
+            chunks.append(chunk)
+            if not message.get("more_body", False):
+                break
+        body = b"".join(chunks)
+
+        output = ""
+        try:
+            data = json.loads(body) if body else {}
+            if data:
+                # Mirror the stdin path: log the raw event before dispatch so
+                # the log_dir audit trail isn't lost in server mode.
+                if self._logger:
+                    try:
+                        self._logger.log(data)
+                    except Exception:
+                        pass  # Don't fail the hook on a logging error
+                response = await self._dispatch(data)
+                if response:
+                    output = serialize_response(response, data.get("hook_event_name"))
+        except Exception as e:  # fail open — never block the agent loop
+            print(f"[fasthooks] serve handler error: {e}", file=sys.stderr)
+
+        payload = output.encode("utf-8")
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"application/json")],
+            }
+        )
+        await send({"type": "http.response.body", "body": payload})
+
+    async def _dispatch(self, data: dict[str, Any]) -> BaseHookResponse | None:
         """Dispatch event to appropriate handlers.
 
         Args:
@@ -370,14 +564,12 @@ class HookApp(HandlerRegistry):
 
         # Emit hook_start
         self._emit(
-            HookObservabilityEvent(
-                event_type="hook_start",
-                hook_id=hook_id,
-                session_id=session_id,
-                hook_event_name=hook_event_name,
-                tool_name=tool_name,
-                input_preview=input_preview,
-            )
+            event_type="hook_start",
+            hook_id=hook_id,
+            session_id=session_id,
+            hook_event_name=hook_event_name,
+            tool_name=tool_name,
+            input_preview=input_preview,
         )
 
         hook_type = hook_event_name
@@ -387,46 +579,31 @@ class HookApp(HandlerRegistry):
 
         try:
             # Tool events
-            if hook_type == "PreToolUse":
+            # Tool events carry a tool_name and support matcher + "*" handlers.
+            tool_dicts = {
+                "PreToolUse": self._pre_tool_handlers,
+                "PostToolUse": self._post_tool_handlers,
+                "PermissionRequest": self._permission_handlers,
+            }
+
+            if hook_type in tool_dicts:
                 tool_name_str = data.get("tool_name", "")
-                # Combine tool-specific handlers with catch-all ("*") handlers
+                registry = tool_dicts[hook_type]
+                # Tool-specific + catch-all ("*") + any generic on() handlers
                 handlers = (
-                    self._pre_tool_handlers.get(tool_name_str, [])
-                    + self._pre_tool_handlers.get("*", [])
+                    registry.get(tool_name_str, [])
+                    + registry.get("*", [])
+                    + self._lifecycle_handlers.get(hook_type, [])
                 )
                 event = self._parse_tool_event(tool_name_str, data)
-                response = await self._run_with_middleware(
-                    handlers, event, hook_id, session_id, hook_event_name, tool_name
-                )
-
-            elif hook_type == "PostToolUse":
-                tool_name_str = data.get("tool_name", "")
-                # Combine tool-specific handlers with catch-all ("*") handlers
-                handlers = (
-                    self._post_tool_handlers.get(tool_name_str, [])
-                    + self._post_tool_handlers.get("*", [])
-                )
-                event = self._parse_tool_event(tool_name_str, data)
-                response = await self._run_with_middleware(
-                    handlers, event, hook_id, session_id, hook_event_name, tool_name
-                )
-
-            elif hook_type == "PermissionRequest":
-                tool_name_str = data.get("tool_name", "")
-                # Combine tool-specific handlers with catch-all ("*") handlers
-                handlers = (
-                    self._permission_handlers.get(tool_name_str, [])
-                    + self._permission_handlers.get("*", [])
-                )
-                event = self._parse_tool_event(tool_name_str, data)
-                response = await self._run_with_middleware(
-                    handlers, event, hook_id, session_id, hook_event_name, tool_name
-                )
-
-            # Lifecycle events
-            elif hook_type in self._lifecycle_handlers:
-                handlers = self._lifecycle_handlers[hook_type]
+            else:
+                # Generic path: any event name registered via on() or a typed
+                # lifecycle decorator. Unknown events still dispatch (handlers
+                # may be empty) and parse as GenericEvent, preserving all fields.
+                handlers = self._lifecycle_handlers.get(hook_type, [])
                 event = self._parse_lifecycle_event(hook_type, data)
+
+            if handlers:
                 response = await self._run_with_middleware(
                     handlers, event, hook_id, session_id, hook_event_name, tool_name
                 )
@@ -434,15 +611,13 @@ class HookApp(HandlerRegistry):
         except Exception as e:
             # Emit hook_error
             self._emit(
-                HookObservabilityEvent(
-                    event_type="hook_error",
-                    hook_id=hook_id,
-                    session_id=session_id,
-                    hook_event_name=hook_event_name,
-                    tool_name=tool_name,
-                    error_type=type(e).__name__,
-                    error_message=str(e),
-                )
+                event_type="hook_error",
+                hook_id=hook_id,
+                session_id=session_id,
+                hook_event_name=hook_event_name,
+                tool_name=tool_name,
+                error_type=type(e).__name__,
+                error_message=str(e),
             )
             raise
 
@@ -456,16 +631,14 @@ class HookApp(HandlerRegistry):
             final_reason = getattr(response, "reason", None)
 
         self._emit(
-            HookObservabilityEvent(
-                event_type="hook_end",
-                hook_id=hook_id,
-                session_id=session_id,
-                hook_event_name=hook_event_name,
-                tool_name=tool_name,
-                duration_ms=duration_ms,
-                decision=final_decision,
-                reason=final_reason,
-            )
+            event_type="hook_end",
+            hook_id=hook_id,
+            session_id=session_id,
+            hook_event_name=hook_event_name,
+            tool_name=tool_name,
+            duration_ms=duration_ms,
+            decision=final_decision,
+            reason=final_reason,
         )
 
         return response
@@ -486,7 +659,9 @@ class HookApp(HandlerRegistry):
             "UserPromptSubmit": UserPromptSubmit,
             "Notification": Notification,
         }
-        event_class = event_classes.get(hook_type, BaseEvent)
+        # Unknown events fall back to GenericEvent (preserves all fields) so any
+        # current or future Claude Code hook is dispatchable without a release.
+        event_class = event_classes.get(hook_type, GenericEvent)
         return event_class.model_validate(data)
 
     async def _run_with_middleware(
@@ -511,6 +686,7 @@ class HookApp(HandlerRegistry):
         Returns:
             Response from middleware or handlers
         """
+
         # Build the innermost function (actual handler execution)
         async def run_handlers(evt: BaseEvent) -> BaseHookResponse | None:
             return await self._run_handlers(
@@ -518,9 +694,7 @@ class HookApp(HandlerRegistry):
             )
 
         # Wrap with middleware (outermost first)
-        chain: Callable[
-            [BaseEvent], Coroutine[Any, Any, BaseHookResponse | None]
-        ] = run_handlers
+        chain: Callable[[BaseEvent], Coroutine[Any, Any, BaseHookResponse | None]] = run_handlers
         for mw in reversed(self._middleware):
             chain = self._wrap_middleware(mw, chain)
 
@@ -577,9 +751,17 @@ class HookApp(HandlerRegistry):
         """
         # Cache for dependencies that should be shared across handlers
         dep_cache: dict[str, Any] = {}
+        # A non-blocking response that still carries output (e.g.
+        # allow(modify=...)). Held and returned only if no later handler blocks,
+        # so deny/block precedence is preserved.
+        pending: BaseHookResponse | None = None
 
         for i, (handler, guard) in enumerate(handlers):
             handler_name = handler.__name__
+            # Bind before the guard runs: a guard that raises (common with
+            # field-based guards on unfamiliar GenericEvent payloads) must be
+            # caught below and fail open, not blow up on an unbound timer.
+            handler_start = time.perf_counter()
 
             try:
                 # Check guard condition (supports async guards)
@@ -593,31 +775,25 @@ class HookApp(HandlerRegistry):
                     if not guard_result:
                         # Emit handler_skip for guard failure
                         self._emit(
-                            HookObservabilityEvent(
-                                event_type="handler_skip",
-                                hook_id=hook_id,
-                                session_id=session_id,
-                                hook_event_name=hook_event_name,
-                                tool_name=tool_name,
-                                handler_name=handler_name,
-                                skip_reason="guard failed",
-                            )
+                            event_type="handler_skip",
+                            hook_id=hook_id,
+                            session_id=session_id,
+                            hook_event_name=hook_event_name,
+                            tool_name=tool_name,
+                            handler_name=handler_name,
+                            skip_reason="guard failed",
                         )
                         continue
 
                 # Emit handler_start
                 self._emit(
-                    HookObservabilityEvent(
-                        event_type="handler_start",
-                        hook_id=hook_id,
-                        session_id=session_id,
-                        hook_event_name=hook_event_name,
-                        tool_name=tool_name,
-                        handler_name=handler_name,
-                    )
+                    event_type="handler_start",
+                    hook_id=hook_id,
+                    session_id=session_id,
+                    hook_event_name=hook_event_name,
+                    tool_name=tool_name,
+                    handler_name=handler_name,
                 )
-
-                handler_start = time.perf_counter()
 
                 # Build dependencies based on type hints
                 deps = self._resolve_dependencies(handler, event, dep_cache)
@@ -641,17 +817,15 @@ class HookApp(HandlerRegistry):
 
                 # Emit handler_end
                 self._emit(
-                    HookObservabilityEvent(
-                        event_type="handler_end",
-                        hook_id=hook_id,
-                        session_id=session_id,
-                        hook_event_name=hook_event_name,
-                        tool_name=tool_name,
-                        handler_name=handler_name,
-                        duration_ms=handler_duration,
-                        decision=decision,
-                        reason=reason,
-                    )
+                    event_type="handler_end",
+                    hook_id=hook_id,
+                    session_id=session_id,
+                    hook_event_name=hook_event_name,
+                    tool_name=tool_name,
+                    handler_name=handler_name,
+                    duration_ms=handler_duration,
+                    decision=decision,
+                    reason=reason,
                 )
 
                 # Check if response should stop handler chain
@@ -659,42 +833,41 @@ class HookApp(HandlerRegistry):
                     # Emit handler_skip for remaining handlers
                     for remaining_handler, _ in handlers[i + 1 :]:
                         self._emit(
-                            HookObservabilityEvent(
-                                event_type="handler_skip",
-                                hook_id=hook_id,
-                                session_id=session_id,
-                                hook_event_name=hook_event_name,
-                                tool_name=tool_name,
-                                handler_name=remaining_handler.__name__,
-                                skip_reason=f"early {decision} from {handler_name}",
-                            )
+                            event_type="handler_skip",
+                            hook_id=hook_id,
+                            session_id=session_id,
+                            hook_event_name=hook_event_name,
+                            tool_name=tool_name,
+                            handler_name=remaining_handler.__name__,
+                            skip_reason=f"early {decision} from {handler_name}",
                         )
                     return response
+
+                # Non-blocking but actionable (e.g. allow(modify=...)): keep it
+                # in case nothing later blocks; latest such response wins.
+                if response is not None and response.carries_output():
+                    pending = response
 
             except Exception as e:
                 # Calculate duration up to exception
                 error_duration = (time.perf_counter() - handler_start) * 1000
                 # Emit handler_error
                 self._emit(
-                    HookObservabilityEvent(
-                        event_type="handler_error",
-                        hook_id=hook_id,
-                        session_id=session_id,
-                        hook_event_name=hook_event_name,
-                        tool_name=tool_name,
-                        handler_name=handler_name,
-                        duration_ms=error_duration,
-                        error_type=type(e).__name__,
-                        error_message=str(e),
-                    )
+                    event_type="handler_error",
+                    hook_id=hook_id,
+                    session_id=session_id,
+                    hook_event_name=hook_event_name,
+                    tool_name=tool_name,
+                    handler_name=handler_name,
+                    duration_ms=error_duration,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
                 )
                 # Log and continue (fail open)
-                print(
-                    f"[fasthooks] Handler {handler_name} failed: {e}", file=sys.stderr
-                )
+                print(f"[fasthooks] Handler {handler_name} failed: {e}", file=sys.stderr)
                 continue
 
-        return None
+        return pending
 
     def _resolve_dependencies(
         self,
@@ -727,13 +900,17 @@ class HookApp(HandlerRegistry):
                 continue
 
             hint = hints.get(param_name)
-            if hint is Transcript:
-                # Cache Transcript per event to avoid redundant loads
-                if "transcript" not in cache:
-                    transcript_path = getattr(event, "transcript_path", None)
-                    cache["transcript"] = Transcript(transcript_path)
-                deps[param_name] = cache["transcript"]
-            elif hint is State:
+            if hint is None:
+                continue
+
+            # Detect injectable deps by qualified name rather than identity so
+            # the pydantic-heavy Transcript/Tasks modules stay lazily imported
+            # (see depends/tasks __init__). get_type_hints() above already
+            # imported the module if — and only if — the handler annotates it.
+            mod = getattr(hint, "__module__", "")
+            name = getattr(hint, "__name__", "")
+
+            if hint is State:
                 if self.state_dir:
                     deps[param_name] = State.for_session(
                         event.session_id,
@@ -742,20 +919,25 @@ class HookApp(HandlerRegistry):
                 else:
                     # No state_dir configured, provide no-op state
                     deps[param_name] = NullState()
-            elif hint is BackgroundTasks:
-                deps[param_name] = BackgroundTasks(
-                    self.task_backend,
-                    event.session_id,
-                )
-            elif hint is Tasks:
-                deps[param_name] = Tasks(
-                    self.task_backend,
-                    event.session_id,
-                )
-            elif hint is PendingResults:
-                deps[param_name] = PendingResults(
-                    self.task_backend,
-                    event.session_id,
-                )
+            elif mod == "fasthooks.transcript.core" and name == "Transcript":
+                # Cache Transcript per event to avoid redundant loads
+                if "transcript" not in cache:
+                    from fasthooks.depends.transcript import Transcript
+
+                    transcript_path = getattr(event, "transcript_path", None)
+                    cache["transcript"] = Transcript(transcript_path)
+                deps[param_name] = cache["transcript"]
+            elif mod == "fasthooks.tasks.depends" and name == "BackgroundTasks":
+                from fasthooks.tasks.depends import BackgroundTasks
+
+                deps[param_name] = BackgroundTasks(self.task_backend, event.session_id)
+            elif mod == "fasthooks.tasks.depends" and name == "Tasks":
+                from fasthooks.tasks.depends import Tasks
+
+                deps[param_name] = Tasks(self.task_backend, event.session_id)
+            elif mod == "fasthooks.tasks.depends" and name == "PendingResults":
+                from fasthooks.tasks.depends import PendingResults
+
+                deps[param_name] = PendingResults(self.task_backend, event.session_id)
 
         return deps

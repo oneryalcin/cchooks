@@ -18,12 +18,20 @@ Usage:
         # Default key is function name; use explicit key for concurrent calls
         tasks.add(memory_lookup, event.prompt)
         return allow()
-"""
 
-from .backend import BaseBackend, InMemoryBackend
-from .base import Task, TaskResult, TaskStatus, task
-from .depends import BackgroundTasks, PendingResults, Tasks
-from .testing import ImmediateBackend, MockBackend
+Lazy-loaded (PEP 562): importing this package is cheap; the task backends and
+DI helpers (each pulling pydantic models) load only when accessed, so hooks
+that never use background tasks don't pay for them at ``import fasthooks``.
+"""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .backend import BaseBackend, InMemoryBackend
+    from .base import Task, TaskResult, TaskStatus, task
+    from .depends import BackgroundTasks, PendingResults, Tasks
+    from .testing import ImmediateBackend, MockBackend
 
 __all__ = [
     # Core
@@ -42,3 +50,26 @@ __all__ = [
     "ImmediateBackend",
     "MockBackend",
 ]
+
+_LAZY = {
+    "task": ".base",
+    "Task": ".base",
+    "TaskResult": ".base",
+    "TaskStatus": ".base",
+    "BaseBackend": ".backend",
+    "InMemoryBackend": ".backend",
+    "Tasks": ".depends",
+    "BackgroundTasks": ".depends",
+    "PendingResults": ".depends",
+    "ImmediateBackend": ".testing",
+    "MockBackend": ".testing",
+}
+
+
+def __getattr__(name: str) -> Any:
+    module = _LAZY.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+
+    return getattr(importlib.import_module(module, __name__), name)

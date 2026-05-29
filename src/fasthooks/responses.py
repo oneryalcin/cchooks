@@ -11,8 +11,14 @@ class BaseHookResponse(ABC):
     """Abstract base class for hook responses."""
 
     @abstractmethod
-    def to_json(self) -> str:
-        """Serialize to Claude Code expected JSON format."""
+    def to_json(self, hook_event_name: str | None = None) -> str:
+        """Serialize to Claude Code expected JSON format.
+
+        Args:
+            hook_event_name: The event being responded to. Some events (notably
+                PreToolUse) require an event-specific output shape; pass it so
+                the response serializes correctly.
+        """
         ...
 
     def should_return(self) -> bool:
@@ -22,6 +28,16 @@ class BaseHookResponse(ABC):
         Default: always return.
         """
         return True
+
+    def carries_output(self) -> bool:
+        """Whether this response produces output even if it doesn't block.
+
+        Used by the dispatcher to return a non-blocking response (e.g.
+        ``allow(modify=...)``) when no later handler blocks — without
+        short-circuiting the chain, so a subsequent ``deny`` still wins.
+        Default mirrors :meth:`should_return`.
+        """
+        return self.should_return()
 
 
 @dataclass
@@ -35,16 +51,36 @@ class HookResponse(BaseHookResponse):
     interrupt: bool = False
     continue_: bool = True
 
-    def to_json(self) -> str:
+    def to_json(self, hook_event_name: str | None = None) -> str:
         """Serialize to Claude Code expected JSON format."""
         output: dict[str, Any] = {}
 
-        if self.decision and self.decision != "approve":
-            output["decision"] = self.decision
-        if self.reason:
-            output["reason"] = self.reason
-        if self.modify:
-            output["hookSpecificOutput"] = {"updatedInput": self.modify}
+        if hook_event_name == "PreToolUse":
+            # PreToolUse returns its decision inside hookSpecificOutput; the
+            # top-level decision/reason form is deprecated for this event.
+            # approve -> "allow", block -> "deny".
+            hso: dict[str, Any] = {"hookEventName": "PreToolUse"}
+            if self.decision in ("deny", "block"):
+                hso["permissionDecision"] = "deny"
+            elif self.modify:
+                # approve + updatedInput = auto-approve the modified input
+                hso["permissionDecision"] = "allow"
+            # A bare approve stays "no opinion" (empty output -> normal
+            # permission flow), matching prior behavior.
+            if "permissionDecision" in hso and self.reason:
+                hso["permissionDecisionReason"] = self.reason
+            if self.modify:
+                hso["updatedInput"] = self.modify
+            if len(hso) > 1:  # more than just hookEventName
+                output["hookSpecificOutput"] = hso
+        else:
+            if self.decision and self.decision != "approve":
+                output["decision"] = self.decision
+            if self.reason:
+                output["reason"] = self.reason
+            if self.modify:
+                output["hookSpecificOutput"] = {"updatedInput": self.modify}
+
         if self.message:
             output["systemMessage"] = self.message
         if not self.continue_:
@@ -55,8 +91,23 @@ class HookResponse(BaseHookResponse):
         return json.dumps(output) if output else ""
 
     def should_return(self) -> bool:
-        """Only return deny/block responses."""
+        """Only deny/block short-circuit the handler chain."""
         return self.decision in ("deny", "block")
+
+    def carries_output(self) -> bool:
+        """True when this response emits something beyond a bare allow.
+
+        A bare ``allow()`` is "no opinion" (no-op); but ``allow(modify=...)``,
+        ``allow(message=...)``, or an interrupt/continue change must still be
+        returned to Claude Code even though they don't block.
+        """
+        return bool(
+            self.decision in ("deny", "block")
+            or self.modify
+            or self.message
+            or self.interrupt
+            or not self.continue_
+        )
 
 
 def allow(
@@ -113,7 +164,7 @@ class PermissionHookResponse(BaseHookResponse):
     interrupt: bool = False
     modify: dict[str, Any] | None = None
 
-    def to_json(self) -> str:
+    def to_json(self, hook_event_name: str | None = None) -> str:
         """Serialize to Claude Code PermissionRequest format."""
         decision: dict[str, Any] = {"behavior": self.behavior}
 
@@ -176,7 +227,7 @@ class ContextResponse(BaseHookResponse):
     additional_context: str
     system_message: str | None = None
 
-    def to_json(self) -> str:
+    def to_json(self, hook_event_name: str | None = None) -> str:
         """Serialize to Claude Code format with additionalContext."""
         output: dict[str, Any] = {
             "hookSpecificOutput": {

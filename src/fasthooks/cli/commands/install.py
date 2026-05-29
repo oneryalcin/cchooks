@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from fasthooks.cli_utils import (
     generate_settings,
     get_lock_path,
     get_settings_path,
+    http_all_hooks,
     make_relative_command,
     merge_hooks_config,
     read_lock,
@@ -25,7 +27,17 @@ from fasthooks.cli_utils import (
 )
 
 
-def run_install(path: str, scope: str, force: bool, console: Console) -> int:
+def run_install(
+    path: str,
+    scope: str,
+    force: bool,
+    console: Console,
+    *,
+    http: bool = False,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    auth: bool = False,
+) -> int:
     """
     Install hooks to Claude Code settings.
 
@@ -34,6 +46,13 @@ def run_install(path: str, scope: str, force: bool, console: Console) -> int:
         scope: Installation scope (project, user, local)
         force: Reinstall even if already installed
         console: Rich console for output
+        http: Register an ``http`` hook pointing at a running ``fasthooks serve``
+            endpoint instead of a per-call ``command`` hook.
+        host: Server host for http mode.
+        port: Server port for http mode.
+        auth: Generate a shared secret and require it on every request (http
+            mode only). The config references ``$FASTHOOKS_TOKEN``; the secret
+            itself is printed once for you to export, never written to settings.
 
     Returns:
         Exit code (0=success, 1=error, 2=validation error)
@@ -41,8 +60,8 @@ def run_install(path: str, scope: str, force: bool, console: Console) -> int:
     hooks_path = Path(path)
 
     # Step 1: Validate path exists (handled by validate_and_introspect)
-    # Step 2: Check uv installed
-    if not check_uv_installed():
+    # Step 2: Check uv installed (command mode only; http hooks don't shell out)
+    if not http and not check_uv_installed():
         console.print(
             "[yellow]⚠[/yellow] uv not found in PATH. Hooks may fail at runtime.\n"
             "  Install: https://docs.astral.sh/uv/getting-started/installation/"
@@ -85,11 +104,41 @@ def run_install(path: str, scope: str, force: bool, console: Console) -> int:
         )
         return 0
 
-    # Step 7: Generate command
-    command = make_relative_command(hooks_resolved, project_root)
+    # Step 7: Generate the hook's identity (command string, or http url)
+    hook_type = "http" if http else "command"
+    auth_env: str | None = None
+    secret: str | None = None
+    if http:
+        command = f"http://{host}:{port}/"
+        if auth:
+            auth_env = "FASTHOOKS_TOKEN"
+            secret = secrets.token_urlsafe(32)
+    else:
+        command = make_relative_command(hooks_resolved, project_root)
 
     # Step 8: Generate settings
-    new_config = generate_settings(hooks, command)
+    # For http, register every http-compatible event (one server receives all of
+    # them and no-ops the ones it doesn't handle), so recipes/handlers added
+    # later work without reinstalling. Command mode registers only what's
+    # introspected, since each event there spawns a process.
+    settings_hooks = http_all_hooks() if http else hooks
+
+    if http:
+        # Warn loudly about handlers the user registered for events that have no
+        # http support (e.g. SessionStart/Setup) — they validated fine but will
+        # never fire over the http transport.
+        supported = {h.split(":")[0] for h in http_all_hooks()}
+        unsupported = sorted({h.split(":", 1)[0] for h in hooks} - supported)
+        if unsupported:
+            console.print(
+                f"[yellow]⚠[/yellow] These handlers won't fire over http "
+                f"(event not http-compatible): {', '.join(unsupported)}\n"
+                "  SessionStart/Setup support only command/mcp_tool hooks — "
+                "install those without --http."
+            )
+    new_config = generate_settings(
+        settings_hooks, command, hook_type=hook_type, auth_env=auth_env
+    )
 
     # Step 9: Backup existing settings
     settings_path = get_settings_path(scope, project_root)
@@ -139,7 +188,10 @@ def run_install(path: str, scope: str, force: bool, console: Console) -> int:
         "settings_file": str(settings_path.relative_to(project_root))
         if settings_path.is_relative_to(project_root)
         else str(settings_path),
+        # "command" holds the entry's identity (command string or http url) and
+        # is what uninstall/status match on. hook_type records which it is.
         "command": command,
+        "hook_type": hook_type,
     }
     try:
         write_lock(lock_path, lock_data)
@@ -156,13 +208,34 @@ def run_install(path: str, scope: str, force: bool, console: Console) -> int:
     except ValueError:
         console.print(f"[green]✓[/green] Created {lock_path}")
 
-    # Step 12: Print restart reminder
+    # Step 12: Print activation reminder
     console.print()
-    console.print(
-        Panel(
-            "Restart Claude Code to activate hooks.",
-            border_style="blue",
+    if http:
+        auth_block = ""
+        if secret:
+            auth_block = (
+                "\n\n[bold]Auth enabled.[/bold] Export this secret — both Claude "
+                "Code and the server read it (it is NOT stored in settings):\n"
+                f"  [bold]export {auth_env}={secret}[/bold]"
+            )
+        console.print(
+            Panel(
+                f"Registered an [bold]http[/bold] hook at [bold]{command}[/bold]."
+                f"{auth_block}\n\n"
+                "Start the server (it must be running for hooks to fire):\n"
+                f"  [bold]fasthooks serve {path} --host {host} --port {port}[/bold]\n\n"
+                "Then restart Claude Code once to pick up the new settings.\n"
+                "[dim]After that, editing handlers/recipes only needs a server "
+                "restart — no settings change.[/dim]",
+                border_style="blue",
+            )
         )
-    )
+    else:
+        console.print(
+            Panel(
+                "Restart Claude Code to activate hooks.",
+                border_style="blue",
+            )
+        )
 
     return 0

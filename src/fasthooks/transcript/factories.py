@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
@@ -57,16 +57,21 @@ def inject_tool_result(
             context = e
             break
 
-    # Determine insertion position and parent
+    # Determine insertion position and parent. The parent must be a real
+    # message Entry (we read parent.uuid); records like FileHistorySnapshot
+    # are not Entry instances and carry no uuid, so we skip them.
+    parent: Entry | None
     if position == "start":
         insert_idx = 0
         parent = None
     elif position == "end":
         insert_idx = len(transcript.entries)
-        parent = transcript.entries[-1] if transcript.entries else None
+        prev = transcript.entries[-1] if transcript.entries else None
+        parent = prev if isinstance(prev, Entry) else None
     else:
         insert_idx = position
-        parent = transcript.entries[insert_idx - 1] if insert_idx > 0 else None
+        prev = transcript.entries[insert_idx - 1] if insert_idx > 0 else None
+        parent = prev if isinstance(prev, Entry) else None
 
     # Create assistant message with tool use
     tool_use = ToolUseBlock(id=tool_use_id, name=tool_name, input=tool_input)
@@ -85,7 +90,7 @@ def inject_tool_result(
     )
     user_data: dict[str, Any] = {
         "uuid": str(uuid4()),
-        "timestamp": datetime.now(timezone.utc),
+        "timestamp": datetime.now(UTC),
         "parent_uuid": assistant.uuid,
         "is_synthetic": True,
         "user_type": "external",

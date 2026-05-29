@@ -72,8 +72,11 @@ class TestHookAppHandlers:
         app.run(stdin=stdin2, stdout=stdout2)
         stdout2.seek(0)
         result = json.loads(stdout2.read())
-        assert result["decision"] == "deny"
-        assert "rm" in result["reason"]
+        # PreToolUse uses hookSpecificOutput.permissionDecision (top-level
+        # decision/reason is deprecated for this event)
+        hso = result["hookSpecificOutput"]
+        assert hso["permissionDecision"] == "deny"
+        assert "rm" in hso["permissionDecisionReason"]
 
     def test_handler_not_called_for_other_tools(self):
         """Handler only called for matching tool."""
@@ -464,3 +467,80 @@ class TestPermissionRequestHandlers:
         client.send(MockEvent.permission_bash(command="ls -la"))
 
         assert captured == ["ls -la"]
+
+
+class TestAllowModifyDispatch:
+    """allow(modify=...) must actually reach Claude Code through dispatch
+    (regression: approve responses were dropped by _run_handlers)."""
+
+    def _pre_tool(self):
+        return {
+            "hook_event_name": "PreToolUse", "session_id": "s", "cwd": "/",
+            "tool_name": "Bash", "tool_input": {"command": "x"}, "tool_use_id": "t",
+        }
+
+    def test_allow_modify_is_returned_and_serialized(self):
+        app = HookApp()
+
+        @app.pre_tool("Bash")
+        def sanitize(event):
+            return allow(modify={"command": "ls -a"})
+
+        resp = TestClient(app).send_raw(self._pre_tool())
+        assert resp is not None  # not dropped
+        hso = json.loads(resp.to_json("PreToolUse"))["hookSpecificOutput"]
+        assert hso["permissionDecision"] == "allow"
+        assert hso["updatedInput"] == {"command": "ls -a"}
+
+    def test_bare_allow_is_still_noop(self):
+        app = HookApp()
+
+        @app.pre_tool("Bash")
+        def ok(event):
+            return allow()
+
+        assert TestClient(app).send_raw(self._pre_tool()) is None
+
+    def test_deny_still_wins_over_allow_modify(self):
+        app = HookApp()
+
+        @app.pre_tool("Bash")
+        def sanitize(event):
+            return allow(modify={"command": "ls -a"})
+
+        @app.pre_tool("Bash")
+        def block_it(event):
+            return deny("nope")
+
+        resp = TestClient(app).send_raw(self._pre_tool())
+        assert resp.decision == "deny"  # precedence preserved
+
+
+class TestLegacyResponseCompat:
+    """Custom BaseHookResponse subclasses with the old to_json(self) signature
+    must keep working after the hook_event_name parameter was added."""
+
+    def test_legacy_no_arg_to_json(self):
+        from io import StringIO
+
+        from fasthooks.responses import BaseHookResponse
+
+        class Legacy(BaseHookResponse):
+            def to_json(self):  # old signature, no hook_event_name
+                return '{"decision": "deny"}'
+
+        app = HookApp()
+
+        @app.pre_tool("Bash")
+        def h(event):
+            return Legacy()
+
+        stdin = StringIO(json.dumps({
+            "session_id": "s", "cwd": "/", "permission_mode": "default",
+            "hook_event_name": "PreToolUse", "tool_name": "Bash",
+            "tool_input": {"command": "x"}, "tool_use_id": "t",
+        }))
+        stdout = StringIO()
+        app.run(stdin=stdin, stdout=stdout)  # must not raise TypeError
+        stdout.seek(0)
+        assert json.loads(stdout.read())["decision"] == "deny"

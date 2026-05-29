@@ -9,7 +9,6 @@ from fasthooks.transcript.blocks import (
     parse_content_block,
 )
 from fasthooks.transcript.core import Transcript, TranscriptStats
-from fasthooks.transcript.query import TranscriptQuery
 from fasthooks.transcript.entries import (
     AssistantMessage,
     CompactBoundary,
@@ -22,6 +21,7 @@ from fasthooks.transcript.entries import (
     parse_entry,
 )
 from fasthooks.transcript.factories import inject_tool_result
+from fasthooks.transcript.query import TranscriptQuery
 from fasthooks.transcript.turn import Turn
 
 __all__ = [
