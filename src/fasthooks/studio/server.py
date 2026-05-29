@@ -351,7 +351,7 @@ def create_app(db_path: Path) -> FastAPI:
     async def notify_clients(message: str) -> None:
         await manager.broadcast(message)
 
-    app.notify_clients = notify_clients  # type: ignore[attr-defined]
+    app.notify_clients = notify_clients
 
     # Serve static frontend if bundled
     if STATIC_DIR.exists() and (STATIC_DIR / "index.html").exists():

@@ -71,7 +71,8 @@ def _format_user_message(
             lines.append(f"**Tool Result: {tool_name}** {status}")
             lines.append("")
             lines.append("```")
-            lines.append(_truncate(tr.content, max_len))
+            content = tr.content if isinstance(tr.content, str) else json.dumps(tr.content)
+            lines.append(_truncate(content, max_len))
             lines.append("```")
             lines.append("")
 

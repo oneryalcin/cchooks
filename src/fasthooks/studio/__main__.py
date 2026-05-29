@@ -10,6 +10,7 @@ import socket
 import webbrowser
 from contextlib import closing
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 
@@ -27,7 +28,7 @@ def _socket_is_open(host: str, port: int) -> bool:
         return sock.connect_ex((host, port)) == 0
 
 
-async def db_watcher(db_path: Path, app: any) -> None:
+async def db_watcher(db_path: Path, app: Any) -> None:
     """Poll DB file for changes and notify clients."""
     last_stat = None
 

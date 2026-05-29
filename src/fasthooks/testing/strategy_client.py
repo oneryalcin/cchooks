@@ -316,7 +316,7 @@ class StrategyTestClient:
                 continue
             result = self._call_with_di(handler, event)
             if result is not None:
-                return result
+                return result  # type: ignore[no-any-return]
 
         return None
 
