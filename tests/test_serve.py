@@ -51,7 +51,9 @@ def test_serve_denies_and_returns_json():
 
     status, body = _drive(app, _payload(tool_input={"command": "rm -rf /"}))
     assert status == 200
-    assert json.loads(body) == {"decision": "deny", "reason": "blocked"}
+    hso = json.loads(body)["hookSpecificOutput"]
+    assert hso["permissionDecision"] == "deny"
+    assert hso["permissionDecisionReason"] == "blocked"
 
 
 def test_serve_allow_returns_empty_body():
@@ -153,7 +155,7 @@ def test_serve_token_required_when_set():
     # Correct token -> dispatched
     status, out = _drive(app, body, headers=[(b"authorization", b"Bearer s3cret")])
     assert status == 200
-    assert json.loads(out)["decision"] == "deny"
+    assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 def test_serve_no_token_means_open():
@@ -167,7 +169,7 @@ def test_serve_no_token_means_open():
 
     status, out = _drive(app, _payload(tool_input={"command": "rm -rf /"}))
     assert status == 200
-    assert json.loads(out)["decision"] == "deny"
+    assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 def test_serve_handles_lifespan():

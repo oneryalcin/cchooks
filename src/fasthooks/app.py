@@ -359,7 +359,7 @@ class HookApp(HandlerRegistry):
 
         # Write output
         if response:
-            write_stdout(response, stdout)
+            write_stdout(response, stdout, data.get("hook_event_name"))
 
     # ═══════════════════════════════════════════════════════════════
     # HTTP server transport (Claude Code "http" hooks)
@@ -502,7 +502,7 @@ class HookApp(HandlerRegistry):
                         pass  # Don't fail the hook on a logging error
                 response = await self._dispatch(data)
                 if response:
-                    output = response.to_json()
+                    output = response.to_json(data.get("hook_event_name"))
         except Exception as e:  # fail open — never block the agent loop
             print(f"[fasthooks] serve handler error: {e}", file=sys.stderr)
 

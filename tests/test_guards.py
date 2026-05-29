@@ -83,7 +83,7 @@ class TestGuardsPreTool:
         assert calls == ["sudo_check"]
         stdout2.seek(0)
         result = json.loads(stdout2.read())
-        assert result["decision"] == "deny"
+        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 class TestGuardsLifecycle:

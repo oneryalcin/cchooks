@@ -29,16 +29,21 @@ def read_stdin(stdin: IO[str] | None = None) -> dict[str, Any]:
         return {}
 
 
-def write_stdout(response: BaseHookResponse, stdout: IO[str] | None = None) -> None:
+def write_stdout(
+    response: BaseHookResponse,
+    stdout: IO[str] | None = None,
+    hook_event_name: str | None = None,
+) -> None:
     """Write hook response JSON to stdout.
 
     Args:
         response: The response to write
         stdout: Output stream, defaults to sys.stdout
+        hook_event_name: Event being responded to (for event-specific output)
     """
     if stdout is None:
         stdout = sys.stdout
 
-    output = response.to_json()
+    output = response.to_json(hook_event_name)
     if output:
         stdout.write(output)

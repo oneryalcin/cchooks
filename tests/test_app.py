@@ -72,8 +72,11 @@ class TestHookAppHandlers:
         app.run(stdin=stdin2, stdout=stdout2)
         stdout2.seek(0)
         result = json.loads(stdout2.read())
-        assert result["decision"] == "deny"
-        assert "rm" in result["reason"]
+        # PreToolUse uses hookSpecificOutput.permissionDecision (top-level
+        # decision/reason is deprecated for this event)
+        hso = result["hookSpecificOutput"]
+        assert hso["permissionDecision"] == "deny"
+        assert "rm" in hso["permissionDecisionReason"]
 
     def test_handler_not_called_for_other_tools(self):
         """Handler only called for matching tool."""
