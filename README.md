@@ -222,6 +222,25 @@ def startup_only(event):
     pass
 ```
 
+### Fail mode (what happens when a handler crashes)
+
+By default fasthooks **fails open** — if a handler raises, the error is logged and
+the action proceeds. For a security guard you usually want the opposite: a crash
+should **block**, not silently allow.
+
+```python
+app = HookApp(fail_mode="closed")          # app-wide default
+
+@app.pre_tool("Bash", fail_mode="closed")  # or per-handler
+def guard(event):
+    ...
+```
+
+When `closed`, a crashed handler denies/blocks the event it was handling
+(PreToolUse → deny, PermissionRequest → deny, Stop/SubagentStop/PostToolUse →
+block). Events with no block semantics (SessionStart, Notification, …) always
+fail open. Strategies declare their own `fail_mode` via `Meta`.
+
 ### Blueprints
 
 ```python

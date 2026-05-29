@@ -12,7 +12,7 @@ fix direction. Status: `open` → `in-progress` → `done` (link the commit/PR).
 
 ## S3 — Fail-open is invisible, unconfigurable for plain handlers, and `fail_mode="closed"` is a broken promise
 **Severity:** high (this is a *guardrail* library; a crashed security hook silently allowing the tool is the scariest possible default)
-**Status:** in-progress
+**Status:** done — branch `devx/smell-tracking`
 
 **Evidence:**
 - A raising handler (incl. a DI miss → `TypeError`) is caught, logged to stderr,
@@ -39,6 +39,22 @@ fix direction. Status: `open` → `in-progress` → `done` (link the commit/PR).
 3. Propagate a strategy's `Meta.fail_mode` to its handlers when included, so
    `CleanStateStrategy` actually blocks on error.
 4. Test **behavior**, not declaration: exception → deny when closed, → allow when open.
+
+**Resolution (done):**
+- `HookApp(fail_mode="open"|"closed")` default + per-decorator override
+  (`@app.pre_tool(..., fail_mode="closed")`) on every block-capable decorator
+  (`pre_tool`, `post_tool`, `on_permission`, `on`, `on_stop`, `on_subagent_stop`).
+- Enforced in `_run_handlers` except-block: synthesizes the **event-appropriate**
+  blocking response — `deny()` (PreToolUse), `deny_permission()` (PermissionRequest),
+  `block()` (Stop/SubagentStop/PostToolUse); non-blocking events stay open.
+- Strategy `Meta.fail_mode` tagged onto the handler wrapper (`base.py`), so
+  `CleanStateStrategy`'s "closed" now actually blocks. Strategy mode is
+  authoritative over the app default for its own handlers.
+- 11 behavior tests in `tests/test_fail_mode.py` (incl. DI-miss → deny, and
+  non-blocking-event → stays open).
+- **Known limitation:** per-handler mode is stashed as a function attribute, so
+  registering the *same function object* under two `fail_mode`s lets the last win.
+  Rare; documented. Lifting it would mean carrying mode in the `HandlerEntry` tuple.
 
 ---
 

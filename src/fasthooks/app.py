@@ -45,8 +45,8 @@ from fasthooks.events.tools import (
 )
 from fasthooks.logging import EventLogger
 from fasthooks.observability.events import HookObservabilityEvent
-from fasthooks.registry import HandlerEntry, HandlerRegistry
-from fasthooks.responses import BaseHookResponse
+from fasthooks.registry import FAIL_MODE_ATTR, FailMode, HandlerEntry, HandlerRegistry
+from fasthooks.responses import BaseHookResponse, block, deny, deny_permission
 
 # Valid event types for @app.on_observe filter
 VALID_OBSERVER_EVENT_TYPES = frozenset(
@@ -93,6 +93,7 @@ class HookApp(HandlerRegistry):
         log_dir: str | None = None,
         log_level: str = "INFO",
         task_backend: BaseBackend | None = None,
+        fail_mode: FailMode = "open",
     ):
         """Initialize HookApp.
 
@@ -101,11 +102,17 @@ class HookApp(HandlerRegistry):
             log_dir: Directory for JSONL event logs (enables built-in logging)
             log_level: Logging verbosity
             task_backend: Backend for background tasks (default: InMemoryBackend)
+            fail_mode: Default behavior when a handler raises. "open" (default)
+                logs the error and lets the action proceed; "closed" denies the
+                action for events that can block (PreToolUse, PostToolUse,
+                PermissionRequest, Stop, SubagentStop). Override per handler via
+                the decorator's ``fail_mode=`` argument.
         """
         super().__init__()
         self.state_dir = state_dir
         self.log_dir = log_dir
         self.log_level = log_level
+        self.fail_mode: FailMode = fail_mode
 
         # Deprecation warning for log_dir
         if log_dir is not None:
@@ -643,6 +650,30 @@ class HookApp(HandlerRegistry):
 
         return response
 
+    def _fail_closed_response(
+        self, hook_event_name: str, handler_name: str, error: Exception
+    ) -> BaseHookResponse | None:
+        """Synthesize an event-appropriate blocking response for a crashed handler.
+
+        Used when the effective fail mode is "closed". Each event has its own
+        block shape, so we reuse the response builders (a bare ``deny()`` would
+        serialize wrong for a PermissionRequest). Events with no block semantics
+        return ``None`` — there's nothing to block, so they stay fail-open.
+        """
+        reason = (
+            f"Hook '{handler_name}' errored and fail_mode is closed "
+            f"({type(error).__name__}: {error})"
+        )
+        if hook_event_name == "PreToolUse":
+            return deny(reason)
+        if hook_event_name == "PermissionRequest":
+            return deny_permission(reason)
+        if hook_event_name in ("Stop", "SubagentStop", "PostToolUse"):
+            return block(reason)
+        # SessionStart/End, Notification, PreCompact, UserPromptSubmit, unknown:
+        # no block semantics -> fail open even when closed.
+        return None
+
     def _parse_tool_event(self, tool_name: str, data: dict[str, Any]) -> ToolEvent:
         """Parse data into typed tool event."""
         event_class = TOOL_EVENT_MAP.get(tool_name, ToolEvent)
@@ -863,6 +894,20 @@ class HookApp(HandlerRegistry):
                     error_type=type(e).__name__,
                     error_message=str(e),
                 )
+                # Fail open (allow) or closed (block) depending on the
+                # effective mode: per-handler override (stashed by the decorator
+                # / strategy wrapper) falls back to the app default.
+                effective_mode = getattr(handler, FAIL_MODE_ATTR, None) or self.fail_mode
+                if effective_mode == "closed":
+                    closed = self._fail_closed_response(hook_event_name, handler_name, e)
+                    if closed is not None:
+                        print(
+                            f"[fasthooks] Handler {handler_name} failed; "
+                            f"failing closed: {e}",
+                            file=sys.stderr,
+                        )
+                        return closed
+
                 # Log and continue (fail open)
                 print(f"[fasthooks] Handler {handler_name} failed: {e}", file=sys.stderr)
                 continue
