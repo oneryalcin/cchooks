@@ -14,7 +14,9 @@ from rich.panel import Panel
 if TYPE_CHECKING:
     from fasthooks import HookApp
 
-_LOOPBACK = ("127.0.0.1", "localhost", "::1", "")
+# Only genuine loopback addresses skip the auth requirement; an empty or
+# wildcard host binds all interfaces and must not be treated as loopback.
+_LOOPBACK = ("127.0.0.1", "localhost", "::1")
 
 
 def _load_app(path: Path) -> HookApp | None:

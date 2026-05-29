@@ -122,6 +122,20 @@ def run_install(
     # later work without reinstalling. Command mode registers only what's
     # introspected, since each event there spawns a process.
     settings_hooks = http_all_hooks() if http else hooks
+
+    if http:
+        # Warn loudly about handlers the user registered for events that have no
+        # http support (e.g. SessionStart/Setup) — they validated fine but will
+        # never fire over the http transport.
+        supported = {h.split(":")[0] for h in http_all_hooks()}
+        unsupported = sorted({h.split(":", 1)[0] for h in hooks} - supported)
+        if unsupported:
+            console.print(
+                f"[yellow]⚠[/yellow] These handlers won't fire over http "
+                f"(event not http-compatible): {', '.join(unsupported)}\n"
+                "  SessionStart/Setup support only command/mcp_tool hooks — "
+                "install those without --http."
+            )
     new_config = generate_settings(
         settings_hooks, command, hook_type=hook_type, auth_env=auth_env
     )

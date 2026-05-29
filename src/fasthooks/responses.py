@@ -29,6 +29,16 @@ class BaseHookResponse(ABC):
         """
         return True
 
+    def carries_output(self) -> bool:
+        """Whether this response produces output even if it doesn't block.
+
+        Used by the dispatcher to return a non-blocking response (e.g.
+        ``allow(modify=...)``) when no later handler blocks — without
+        short-circuiting the chain, so a subsequent ``deny`` still wins.
+        Default mirrors :meth:`should_return`.
+        """
+        return self.should_return()
+
 
 @dataclass
 class HookResponse(BaseHookResponse):
@@ -81,8 +91,23 @@ class HookResponse(BaseHookResponse):
         return json.dumps(output) if output else ""
 
     def should_return(self) -> bool:
-        """Only return deny/block responses."""
+        """Only deny/block short-circuit the handler chain."""
         return self.decision in ("deny", "block")
+
+    def carries_output(self) -> bool:
+        """True when this response emits something beyond a bare allow.
+
+        A bare ``allow()`` is "no opinion" (no-op); but ``allow(modify=...)``,
+        ``allow(message=...)``, or an interrupt/continue change must still be
+        returned to Claude Code even though they don't block.
+        """
+        return bool(
+            self.decision in ("deny", "block")
+            or self.modify
+            or self.message
+            or self.interrupt
+            or not self.continue_
+        )
 
 
 def allow(

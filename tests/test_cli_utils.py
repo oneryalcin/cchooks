@@ -793,3 +793,32 @@ class TestGenericToolEventCoverage:
         result = generate_settings(["FileChanged"], "cmd")
         entry = result["hooks"]["FileChanged"][0]
         assert "matcher" not in entry
+
+
+class TestHttpInstallWarnings:
+    """install --http should warn when handlers target events with no http support."""
+
+    def test_warns_on_unsupported_event_handler(self, tmp_path):
+        import io as _io
+
+        from rich.console import Console
+
+        from fasthooks.cli.commands.install import run_install
+
+        hooks = tmp_path / ".claude" / "hooks.py"
+        hooks.parent.mkdir(parents=True)
+        hooks.write_text(
+            "from fasthooks import HookApp\n"
+            "app = HookApp()\n"
+            "@app.on_session_start()\n"  # SessionStart: no http support
+            "def s(event):\n    return None\n"
+            "@app.pre_tool('Bash')\n"
+            "def b(event):\n    return None\n"
+        )
+        buf = _io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        code = run_install(str(hooks), "project", False, console, http=True)
+        out = buf.getvalue()
+        assert code == 0
+        assert "won't fire over http" in out
+        assert "SessionStart" in out

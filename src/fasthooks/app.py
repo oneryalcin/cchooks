@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import anyio
 
-from fasthooks._internal.io import read_stdin, write_stdout
+from fasthooks._internal.io import read_stdin, serialize_response, write_stdout
 from fasthooks.blueprint import Blueprint
 from fasthooks.depends.state import NullState, State
 from fasthooks.events.base import BaseEvent, GenericEvent
@@ -405,7 +405,10 @@ class HookApp(HandlerRegistry):
         # An unauthenticated non-loopback bind exposes arbitrary hook execution
         # to any reachable client. Fail closed unless explicitly allowed.
         # Checked before importing uvicorn so the refusal is fast and unconditional.
-        is_loopback = host in ("127.0.0.1", "localhost", "::1", "")
+        # Only genuine loopback addresses bypass the auth requirement. An empty
+        # or wildcard host (""/"0.0.0.0"/"::") binds all interfaces and must NOT
+        # be treated as loopback.
+        is_loopback = host in ("127.0.0.1", "localhost", "::1")
         if not self._auth_token and not is_loopback:
             if not allow_unauthenticated:
                 raise RuntimeError(
@@ -492,10 +495,14 @@ class HookApp(HandlerRegistry):
                 await send({"type": "http.response.body", "body": b""})
                 return
 
-        # Read the request body with a hard cap. Hook payloads are small; an
-        # unbounded read lets any client exhaust memory and kill the server
-        # (which, since hooks fail open, would silently disable them).
-        max_body = 4 * 1024 * 1024  # 4 MiB
+        # Read the request body with a hard cap to bound memory. The cap is
+        # generous (25 MiB) so legitimate large payloads — e.g. a PreToolUse
+        # Write with big file content — still reach a protective handler rather
+        # than 413ing (Claude Code treats non-2xx as fail-open, which would skip
+        # the guard). Only pathological/abusive bodies exceed it; for those the
+        # client controls its own payload anyway, so the fail-open is not an
+        # escalation.
+        max_body = 25 * 1024 * 1024  # 25 MiB
         chunks: list[bytes] = []
         total = 0
         while True:
@@ -524,7 +531,7 @@ class HookApp(HandlerRegistry):
                         pass  # Don't fail the hook on a logging error
                 response = await self._dispatch(data)
                 if response:
-                    output = response.to_json(data.get("hook_event_name"))
+                    output = serialize_response(response, data.get("hook_event_name"))
         except Exception as e:  # fail open — never block the agent loop
             print(f"[fasthooks] serve handler error: {e}", file=sys.stderr)
 
@@ -744,6 +751,10 @@ class HookApp(HandlerRegistry):
         """
         # Cache for dependencies that should be shared across handlers
         dep_cache: dict[str, Any] = {}
+        # A non-blocking response that still carries output (e.g.
+        # allow(modify=...)). Held and returned only if no later handler blocks,
+        # so deny/block precedence is preserved.
+        pending: BaseHookResponse | None = None
 
         for i, (handler, guard) in enumerate(handlers):
             handler_name = handler.__name__
@@ -832,6 +843,11 @@ class HookApp(HandlerRegistry):
                         )
                     return response
 
+                # Non-blocking but actionable (e.g. allow(modify=...)): keep it
+                # in case nothing later blocks; latest such response wins.
+                if response is not None and response.carries_output():
+                    pending = response
+
             except Exception as e:
                 # Calculate duration up to exception
                 error_duration = (time.perf_counter() - handler_start) * 1000
@@ -851,7 +867,7 @@ class HookApp(HandlerRegistry):
                 print(f"[fasthooks] Handler {handler_name} failed: {e}", file=sys.stderr)
                 continue
 
-        return None
+        return pending
 
     def _resolve_dependencies(
         self,

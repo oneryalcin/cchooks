@@ -340,6 +340,18 @@ Implement the recipe contract with **one** recipe chosen for being the cleanest 
 
 ---
 
+# Review round 5 (to_json + reload): dispatch, payloads, compat
+
+> **STATUS: DONE.** Final pass on the `to_json` + `--reload` work; five findings (3 adversarial + 2 standard, one overlapping), all correctness — fixed and reproduced.
+> - *[HIGH adversarial] `allow(modify=...)` was silently dropped by dispatch.* `HookResponse.should_return()` is False for approve, so `_run_handlers` discarded a sanitizer's rewrite and the original (dangerous) tool input proceeded — and my `to_json` test only checked serialization, not dispatch (the false-confidence the reviewer named). **Fixed:** added `carries_output()`; `_run_handlers` now holds a non-blocking-but-actionable response (`allow(modify=...)`/`message`) and returns it if nothing later blocks — so it reaches Claude Code while **deny/block precedence is preserved** (bare `allow()` stays a no-op). Integration tests through `TestClient`, not just `to_json`. (Bug was pre-existing, but my work touched and "claimed" this path.)
+> - *[MED adversarial / P2 standard] Empty/wildcard host treated as loopback.* `serve(host="")` bound all interfaces yet bypassed the auth gate. **Fixed:** only `127.0.0.1`/`localhost`/`::1` count as loopback; `""`/`0.0.0.0`/`::` require auth (both serve paths).
+> - *[MED adversarial] http install silently dropped unsupported handlers.* `install --http` registers the http catalog, so an `@app.on_session_start()` validated "successfully" but could never fire (SessionStart has no http support). **Fixed:** install now warns loudly, naming the handlers that won't fire over http.
+> - *[P2 standard] Oversized-payload 413 fail-open.* A large legit payload (e.g. a `Write` with big file content) hitting the 4 MiB cap → 413 → CC fails open → the guard is skipped. **Fixed:** cap raised to 25 MiB so legit payloads reach the handler; only pathological bodies 413 (and there the client controls its own payload, so it's no escalation). Test for a 5 MiB legit Write still dispatching.
+> - *[P2 standard] `to_json` signature change broke custom subclasses.* Adding `hook_event_name` made the call break third-party `BaseHookResponse` subclasses with the old `to_json(self)`. **Fixed:** `serialize_response()` shim inspects the signature and calls the legacy no-arg form when needed. Test with a legacy subclass through `app.run()`.
+> - 647/647 pass, mypy + ruff clean (my files).
+
+---
+
 ### Explicitly OUT of the minimal slice (name it, so scope can't creep)
 
 Defer until the slice above is consumed and proven:

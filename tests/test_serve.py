@@ -173,11 +173,32 @@ def test_serve_no_token_means_open():
 
 
 def test_serve_rejects_oversized_body():
-    """A body over the cap is rejected with 413 (no memory exhaustion)."""
+    """A body over the cap is rejected with 413 (no memory exhaustion). The cap
+    is generous so legitimate large payloads still reach a handler."""
     app = HookApp()
-    status, body = _drive(app, b"x" * (4 * 1024 * 1024 + 1))
+    status, body = _drive(app, b"x" * (25 * 1024 * 1024 + 1))
     assert status == 413
     assert body == b""
+
+
+def test_serve_large_legit_payload_still_dispatched():
+    """A big-but-legit payload (e.g. a Write with file content) must reach the
+    handler, not 413 into a fail-open that skips the guard."""
+    app = HookApp()
+
+    @app.pre_tool("Write")
+    def guard(event):
+        return deny("blocked")
+
+    big = "x" * (5 * 1024 * 1024)  # 5 MiB of "file content"
+    body = json.dumps(
+        {"hook_event_name": "PreToolUse", "session_id": "s", "cwd": "/",
+         "tool_name": "Write", "tool_use_id": "t",
+         "tool_input": {"file_path": "/a", "content": big}}
+    ).encode()
+    status, out = _drive(app, body)
+    assert status == 200
+    assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 def test_serve_refuses_non_loopback_without_token(monkeypatch):
@@ -185,8 +206,11 @@ def test_serve_refuses_non_loopback_without_token(monkeypatch):
 
     monkeypatch.delenv("FASTHOOKS_TOKEN", raising=False)
     app = HookApp()
+    # 0.0.0.0 and "" (wildcard) both bind all interfaces -> not loopback
     with pytest.raises(RuntimeError, match="non-loopback"):
         app.serve(host="0.0.0.0")
+    with pytest.raises(RuntimeError, match="non-loopback"):
+        app.serve(host="")
 
 
 def test_reload_factory_rebuilds_app_from_env(tmp_path, monkeypatch):
