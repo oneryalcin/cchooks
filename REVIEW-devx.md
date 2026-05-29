@@ -267,6 +267,12 @@ CC `http` hooks POST the event JSON and expect the same output JSON; **any error
 > - **Measured, side by side:** `curl` of a `PreToolUse` `rm -rf` payload returns `{"decision":"deny",...}` in **avg 0.95 ms (min 0.84, max 1.25, n=30)** — vs **~300 ms** for the warm `uv run` command-hook path. **~300× faster per tool call.** Generic events (`FileChanged`) and malformed JSON both return clean 200s.
 > - **Tests:** `tests/test_serve.py` drives `_asgi_app` directly (mock ASGI scope/receive/send — no live server needed): deny→JSON, allow→empty 200, generic-event-over-http, fail-open on bad JSON, lifespan startup/shutdown. **612/612 pass**, mypy + ruff clean.
 > - **Out of scope (still, per the plan):** invisible lifecycle (auto-start/reload) — `fasthooks serve` is run manually for now; that polish is deferred until the slice is consumed.
+>
+> **Codex review round 2 (adversarial + standard, against `main`): triaged.**
+> - *[HIGH] Unauthenticated HTTP endpoint.* The endpoint dispatches any received event into arbitrary handler code; the `--host` knob exposed that with no auth. Default bind is loopback (safe). **Cheap defenses shipped** (chosen over full auth, to fit the minimal slice): reject non-`POST` (405), and a loud stderr warning when binding a non-loopback host. The endpoint docstring states the trust boundary. **Follow-up logged:** an optional shared-secret token (fits CC's http-hook `headers` + `allowedEnvVars`) before recommending any non-loopback/remote use. Tests: 405-on-GET, warning-fires-on-`0.0.0.0`.
+> - *[MED/P2] HTTP path bypassed `log_dir` logging* (both reviewers). Confirmed: the stdin path logged the raw event before dispatch, the HTTP path didn't — silently losing the JSONL audit trail in server mode. **Fixed:** `_asgi_app` now logs before `_dispatch` under the same best-effort guard. Regression test added (`log_dir` file written in server mode).
+> - *[P2] `uv.lock` resolver cutoff* (standard, repeat). Still not ours — dirty working tree, never staged; left for the maintainer's environment.
+> - 614/614 pass, mypy + ruff clean.
 
 ---
 

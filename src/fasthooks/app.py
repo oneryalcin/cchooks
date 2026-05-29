@@ -378,6 +378,11 @@ class HookApp(HandlerRegistry):
 
         Requires the ``server`` extra: ``pip install 'fasthooks[server]'``.
 
+        The endpoint is unauthenticated: it dispatches whatever event JSON it
+        receives into your (arbitrary) handlers. Keep the default loopback bind
+        unless you put authentication in front — binding a non-loopback host
+        exposes your hooks to any reachable client (warned at startup).
+
         Args:
             host: Interface to bind (default: loopback only).
             port: Port to bind.
@@ -390,6 +395,17 @@ class HookApp(HandlerRegistry):
                 "serve() requires uvicorn. Install with: "
                 "pip install 'fasthooks[server]'"
             ) from e
+
+        # The endpoint has no auth; a non-loopback bind lets any reachable
+        # client fabricate hook events and trigger handlers. Warn loudly.
+        if host not in ("127.0.0.1", "localhost", "::1", ""):
+            print(
+                f"[fasthooks] WARNING: serving on non-loopback host {host!r} "
+                "with no authentication — any client that can reach this port "
+                "can trigger your hooks. Bind 127.0.0.1 or front it with an "
+                "authenticated proxy.",
+                file=sys.stderr,
+            )
 
         # interface="asgi3": _asgi_app is a bound method, which uvicorn's
         # auto-detection otherwise mistakes for the legacy ASGI 2.0 (one-arg
@@ -427,6 +443,19 @@ class HookApp(HandlerRegistry):
         if scope["type"] != "http":
             return
 
+        # Claude Code only ever POSTs hook events; reject anything else so the
+        # endpoint isn't a general-purpose surface.
+        if scope.get("method", "GET") != "POST":
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 405,
+                    "headers": [(b"allow", b"POST")],
+                }
+            )
+            await send({"type": "http.response.body", "body": b""})
+            return
+
         # Read the full request body
         body = b""
         while True:
@@ -439,6 +468,13 @@ class HookApp(HandlerRegistry):
         try:
             data = json.loads(body) if body else {}
             if data:
+                # Mirror the stdin path: log the raw event before dispatch so
+                # the log_dir audit trail isn't lost in server mode.
+                if self._logger:
+                    try:
+                        self._logger.log(data)
+                    except Exception:
+                        pass  # Don't fail the hook on a logging error
                 response = await self._dispatch(data)
                 if response:
                     output = response.to_json()

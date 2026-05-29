@@ -7,6 +7,7 @@ dispatch + JSON output as the stdin path, and fail-open on bad input.
 from __future__ import annotations
 
 import json
+import warnings
 
 import anyio
 
@@ -94,6 +95,41 @@ def test_serve_fails_open_on_malformed_json():
     status, body = _drive(app, b"{not valid json")
     assert status == 200
     assert body == b""
+
+
+def test_serve_rejects_non_post():
+    """Only POST is a valid hook delivery; other methods get 405."""
+    app = HookApp()
+    scope = {"type": "http", "method": "GET", "path": "/", "headers": []}
+    sent: list[dict] = []
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    anyio.run(app._asgi_app, scope, receive, send)
+    start = next(m for m in sent if m["type"] == "http.response.start")
+    assert start["status"] == 405
+
+
+def test_serve_preserves_log_dir_audit_trail(tmp_path):
+    """Server mode must log the raw event like the stdin path does."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)  # log_dir is deprecated
+        app = HookApp(log_dir=str(tmp_path))
+
+    @app.pre_tool("Bash")
+    def noop(event):
+        return None
+
+    _drive(app, _payload(session_id="abc", tool_input={"command": "ls"}))
+
+    log_file = tmp_path / "hooks-abc.jsonl"
+    assert log_file.exists()
+    logged = json.loads(log_file.read_text().strip())
+    assert logged["event"] == "PreToolUse"
 
 
 def test_serve_handles_lifespan():
