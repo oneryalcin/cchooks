@@ -39,6 +39,7 @@ from fasthooks.events.tools import (
     Read,
     Task,
     ToolEvent,
+    ToolFailureEvent,
     WebFetch,
     WebSearch,
     Write,
@@ -282,6 +283,10 @@ class HookApp(HandlerRegistry):
         # Copy post_tool handlers
         for tool, handlers in blueprint._post_tool_handlers.items():
             self._post_tool_handlers[tool].extend(handlers)
+
+        # Copy post_tool_failure handlers
+        for tool, handlers in blueprint._post_tool_failure_handlers.items():
+            self._post_tool_failure_handlers[tool].extend(handlers)
 
         # Copy permission handlers
         for tool, handlers in blueprint._permission_handlers.items():
@@ -594,6 +599,7 @@ class HookApp(HandlerRegistry):
             tool_dicts = {
                 HookEventName.PRE_TOOL_USE: self._pre_tool_handlers,
                 HookEventName.POST_TOOL_USE: self._post_tool_handlers,
+                HookEventName.POST_TOOL_USE_FAILURE: self._post_tool_failure_handlers,
                 HookEventName.PERMISSION_REQUEST: self._permission_handlers,
             }
 
@@ -606,7 +612,12 @@ class HookApp(HandlerRegistry):
                     + registry.get("*", [])
                     + self._lifecycle_handlers.get(hook_type, [])
                 )
-                event = self._parse_tool_event(tool_name_str, data)
+                if hook_type == HookEventName.POST_TOOL_USE_FAILURE:
+                    # Failure events carry error/is_interrupt/duration_ms; parse
+                    # as ToolFailureEvent (not the per-tool accessor classes).
+                    event = ToolFailureEvent.model_validate(data)
+                else:
+                    event = self._parse_tool_event(tool_name_str, data)
             else:
                 # Generic path: any event name registered via on() or a typed
                 # lifecycle decorator. Unknown events still dispatch (handlers

@@ -264,6 +264,38 @@ class StrategyTestClient:
         event_dict["hook_event_name"] = "PostToolUse"
         return self._invoke_hook("post_tool:Bash", event, event_dict)
 
+    def trigger_post_tool_failure(
+        self,
+        tool_name: str = "Bash",
+        *,
+        error: str = "tool failed",
+        tool_input: dict[str, Any] | None = None,
+    ) -> BaseHookResponse | None:
+        """Trigger PostToolUseFailure for a tool.
+
+        Args:
+            tool_name: Tool whose call failed.
+            error: Error message describing the failure.
+            tool_input: Tool input that was attempted.
+
+        Returns:
+            Hook response or None.
+        """
+        from fasthooks.events.tools import ToolFailureEvent
+
+        event = ToolFailureEvent.model_validate(
+            {
+                "hook_event_name": "PostToolUseFailure",
+                "session_id": self.session_id,
+                "cwd": str(self.project_dir),
+                "tool_name": tool_name,
+                "tool_input": tool_input or {},
+                "tool_use_id": "test-tool-use",
+                "error": error,
+            }
+        )
+        return self._invoke_hook(f"post_tool_failure:{tool_name}", event)
+
     def _invoke_hook(
         self,
         hook_name: str,
@@ -298,6 +330,10 @@ class StrategyTestClient:
             # Lifecycle hook - use PascalCase key
             lifecycle_key = LIFECYCLE_MAP.get(hook_name, "")
             handlers = bp._lifecycle_handlers.get(lifecycle_key, [])
+        elif hook_name.startswith("post_tool_failure:"):
+            tool = hook_name.split(":")[1]
+            handlers = bp._post_tool_failure_handlers.get(tool, [])
+            handlers = handlers + bp._post_tool_failure_handlers.get("*", [])
         elif hook_name.startswith("post_tool:"):
             tool = hook_name.split(":")[1]
             # Also check catch-all handlers

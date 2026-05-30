@@ -5,7 +5,7 @@ __version__ = "0.1.4"
 from fasthooks.app import HookApp
 from fasthooks.blueprint import Blueprint
 from fasthooks.events.base import GenericEvent, HookEventName
-from fasthooks.events.tools import ToolEvent
+from fasthooks.events.tools import ToolEvent, ToolFailureEvent
 from fasthooks.responses import (
     BaseHookResponse,
     ContextResponse,
@@ -13,10 +13,12 @@ from fasthooks.responses import (
     PermissionHookResponse,
     allow,
     approve_permission,
+    ask,
     block,
     context,
     deny,
     deny_permission,
+    halt,
 )
 
 __all__ = [
@@ -30,10 +32,13 @@ __all__ = [
     "HookResponse",
     "PermissionHookResponse",
     "ToolEvent",
+    "ToolFailureEvent",
     "allow",
     "approve_permission",
+    "ask",
     "block",
     "context",
     "deny",
     "deny_permission",
+    "halt",
 ]

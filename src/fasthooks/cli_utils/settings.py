@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -77,7 +78,7 @@ def hook_identity(hook: dict[str, Any]) -> str | None:
 
 
 def merge_hooks_config(
-    existing: dict[str, Any], new: dict[str, Any], our_command: str
+    existing: dict[str, Any], new: Mapping[str, Any], our_command: str
 ) -> dict[str, Any]:
     """
     Merge new hooks into existing settings.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +17,52 @@ from fasthooks.transcript import Transcript
 
 # Static files directory (bundled frontend)
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Studio API response shapes (the contract the bundled frontend consumes).
+# TypedDicts so mypy checks the key names where we build them; the FastAPI route
+# return annotations stay plain dicts, so response handling is unchanged.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class HandlerSummary(TypedDict, total=False):
+    name: str | None
+    decision: str | None
+    duration_ms: float | None
+    reason: str | None
+
+
+class HookSummary(TypedDict, total=False):
+    hook_id: str
+    hook_event_name: str | None
+    total_duration_ms: float | None
+    handlers: list[HandlerSummary]
+    input_preview: dict[str, Any] | None
+
+
+class ConversationEntry(TypedDict, total=False):
+    """One conversation entry, discriminated at runtime on ``type``
+    (tool_result | user_message | thinking | text | tool_use). One loose
+    TypedDict (rather than five) keeps it simple while still catching key typos.
+    """
+
+    type: str
+    content: Any
+    tool_use_id: str
+    id: str
+    name: str
+    input: dict[str, Any]
+    hooks: HookSummary | None
+
+
+class ConversationStats(TypedDict):
+    tokens_in: int
+    tokens_out: int
+    messages: int
+    turns: int
+    tool_calls: int
+    hooks_fired: int
 
 
 def create_app(db_path: Path) -> FastAPI:
@@ -141,7 +187,7 @@ def create_app(db_path: Path) -> FastAPI:
         tool_hook_map = {row["tool_use_id"]: row["hook_id"] for row in tool_use_hooks}
 
         # Build entries list
-        entries: list[dict[str, Any]] = []
+        entries: list[ConversationEntry] = []
 
         for entry in transcript.all_entries:
             etype = type(entry).__name__
@@ -186,7 +232,7 @@ def create_app(db_path: Path) -> FastAPI:
                         tool_use_id = block.id
                         hook_id = tool_hook_map.get(tool_use_id)
 
-                        hooks_data = None
+                        hooks_data: HookSummary | None = None
                         if hook_id:
                             # Get all events for this hook
                             events = conn.execute("""
@@ -197,7 +243,7 @@ def create_app(db_path: Path) -> FastAPI:
                                 ORDER BY id
                             """, (hook_id,)).fetchall()
 
-                            handlers = []
+                            handlers: list[HandlerSummary] = []
                             total_duration = None
                             hook_event_name = None
                             input_preview = None
@@ -244,7 +290,7 @@ def create_app(db_path: Path) -> FastAPI:
 
         # Stats
         ts = transcript.stats
-        stats = {
+        stats: ConversationStats = {
             "tokens_in": ts.input_tokens if hasattr(ts, "input_tokens") else 0,
             "tokens_out": ts.output_tokens if hasattr(ts, "output_tokens") else 0,
             "messages": ts.messages if hasattr(ts, "messages") else 0,

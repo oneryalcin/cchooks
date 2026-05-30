@@ -2,7 +2,34 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TypedDict
+
+
+class HookHandlerEntry(TypedDict, total=False):
+    """A single hook handler in settings.json — a command or http hook.
+
+    TypedDict (not a plain dict) so mypy checks the wire key names Claude Code
+    reads; a typo like "allowedEnvVar" would otherwise be a silent no-op.
+    """
+
+    type: str  # "command" | "http"
+    command: str  # command hooks
+    url: str  # http hooks
+    headers: dict[str, str]
+    allowedEnvVars: list[str]
+
+
+class MatcherGroup(TypedDict, total=False):
+    """A matcher group: an optional ``matcher`` plus its hook handlers."""
+
+    matcher: str
+    hooks: list[HookHandlerEntry]
+
+
+class HooksSettings(TypedDict):
+    """The top-level ``{"hooks": {...}}`` block of settings.json."""
+
+    hooks: dict[str, list[MatcherGroup]]
 
 # Events that match on tool name. A matcher-less registration of one of these
 # (e.g. @app.on("PreToolUse")) means "every tool", so it must install as a "*"
@@ -70,7 +97,7 @@ def generate_settings(
     *,
     hook_type: str = "command",
     auth_env: str | None = None,
-) -> dict[str, Any]:
+) -> HooksSettings:
     """
     Generate settings.json hooks configuration.
 
@@ -96,11 +123,11 @@ def generate_settings(
         >>> generate_settings(["PreToolUse:Bash", "Stop"], "cmd")
         {"hooks": {"PreToolUse": [...], "Stop": [...]}}
     """
-    settings: dict[str, Any] = {"hooks": {}}
+    settings: HooksSettings = {"hooks": {}}
 
-    def _entry() -> dict[str, Any]:
+    def _entry() -> HookHandlerEntry:
         if hook_type == "http":
-            entry: dict[str, Any] = {"type": "http", "url": command}
+            entry: HookHandlerEntry = {"type": "http", "url": command}
             if auth_env:
                 entry["headers"] = {"Authorization": f"Bearer ${{{auth_env}}}"}
                 entry["allowedEnvVars"] = [auth_env]

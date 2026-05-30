@@ -794,6 +794,16 @@ class TestGenericToolEventCoverage:
         entry = result["hooks"]["FileChanged"][0]
         assert "matcher" not in entry
 
+    def test_post_tool_failure_writes_matcher(self):
+        """install must register a PostToolUseFailure matcher so CC delivers it."""
+        result = generate_settings(["PostToolUseFailure:Bash"], "cmd")
+        assert result["hooks"]["PostToolUseFailure"][0]["matcher"] == "Bash"
+
+    def test_bare_post_tool_failure_becomes_catch_all(self):
+        """PostToolUseFailure is a tool event -> bare registration installs as '*'."""
+        result = generate_settings(["PostToolUseFailure"], "cmd")
+        assert result["hooks"]["PostToolUseFailure"][0]["matcher"] == "*"
+
 
 class TestHttpInstallWarnings:
     """install --http should warn when handlers target events with no http support."""
