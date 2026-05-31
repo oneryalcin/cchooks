@@ -110,7 +110,7 @@ class TestEventEmission:
 
         decision = decisions[0]
         assert hasattr(decision, "decision")
-        assert decision.decision == "approve"
+        assert decision.decision == "allow"
         assert decision.message == "observed"
 
     def test_hook_exit_has_duration(self, tmp_path: Path):
@@ -298,7 +298,7 @@ class TestVerbosityFiltering:
             session_id="test",
             strategy_name="test",
             hook_name="on_stop",
-            decision="approve",
+            decision="allow",
         ))
         backend.handle_event(ObservabilityEvent(
             session_id="test",
@@ -327,7 +327,7 @@ class TestVerbosityFiltering:
             session_id="test",
             strategy_name="test",
             hook_name="on_stop",
-            decision="approve",
+            decision="allow",
         ))
 
         assert backend.pending_count == 2

@@ -19,10 +19,12 @@ if TYPE_CHECKING:
     from .base import BaseObserver
     from .enums import TerminalOutput, Verbosity
     from .events import (
+        Decision,
         DecisionEvent,
         ErrorEvent,
         HookObservabilityEvent,
         ObservabilityEvent,
+        normalize_decision,
     )
     from .observers import EventCapture, FileObserver, SQLiteObserver
 
@@ -37,6 +39,9 @@ __all__ = [
     "ObservabilityEvent",
     "DecisionEvent",
     "ErrorEvent",
+    # Decision vocabulary
+    "Decision",
+    "normalize_decision",
     # Enums
     "Verbosity",
     "TerminalOutput",
@@ -49,6 +54,8 @@ _LAZY = {
     "DecisionEvent": ".events",
     "ErrorEvent": ".events",
     "ObservabilityEvent": ".events",
+    "Decision": ".events",
+    "normalize_decision": ".events",
     "BaseObserver": ".base",
     "FileObservabilityBackend": ".backend",
     "TerminalOutput": ".enums",

@@ -62,6 +62,16 @@ class SQLiteObserver(BaseObserver):
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type)")
 
+            # One-time migration: fold the deprecated "approve" decision into the
+            # canonical "allow". Gated on user_version so it runs once per DB, not
+            # a full-table scan on every observer connect.
+            (version,) = conn.execute("PRAGMA user_version").fetchone()
+            if version < 1:
+                conn.execute(
+                    "UPDATE events SET decision = 'allow' WHERE decision = 'approve'"
+                )
+                conn.execute("PRAGMA user_version = 1")
+
     def _write(self, event: HookObservabilityEvent) -> None:
         """Insert event into database.
 
