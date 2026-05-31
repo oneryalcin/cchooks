@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.11"
 
 [options]
-exclude-newer = "2026-05-22T19:48:48.249933Z"
+exclude-newer = "2026-05-24T08:03:41.723261Z"
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
@@ -468,6 +468,7 @@ studio = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "httpx" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -498,6 +499,7 @@ provides-extras = ["claude", "server", "reload", "studio"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "httpx", specifier = ">=0.27" },
     { name = "mypy", specifier = ">=1.19.0" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },

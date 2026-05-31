@@ -365,12 +365,18 @@ def create_app(db_path: Path) -> FastAPI:
 
         # Decision breakdown
         decisions = conn.execute("""
-            SELECT decision, COUNT(*) as count
+            SELECT
+                CASE WHEN decision = 'approve' THEN 'allow' ELSE decision END
+                    AS decision,
+                COUNT(*) as count
             FROM events
             WHERE event_type = 'handler_end' AND decision IS NOT NULL
-            GROUP BY decision
+            GROUP BY 1
         """).fetchall()
 
+        # The CASE folds the deprecated "approve" into "allow" so the breakdown is
+        # coherent even on a studio.db whose rows predate the migration (the
+        # read-only server never runs the observer's one-time migration).
         decision_counts = {row["decision"]: row["count"] for row in decisions}
 
         # Average handler duration
