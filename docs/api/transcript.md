@@ -49,16 +49,16 @@ Transcript(
 ### CRUD Methods
 
 ```python
-# Insert
-transcript.insert(index: int, entry: Entry) -> None
-transcript.append(entry: Entry) -> None
+# Insert (graph operations take a MessageEntry — the entry must carry a uuid)
+transcript.insert(index: int, entry: MessageEntry) -> None
+transcript.append(entry: MessageEntry) -> None
 
 # Remove
-transcript.remove(entry: Entry, relink: bool = True) -> None
-transcript.remove_tree(entry: Entry) -> list[Entry]
+transcript.remove(entry: MessageEntry, relink: bool = True) -> None
+transcript.remove_tree(entry: MessageEntry) -> list[MessageEntry]
 
 # Replace
-transcript.replace(old: Entry, new: Entry) -> None
+transcript.replace(old: MessageEntry, new: MessageEntry) -> None
 
 # Persistence
 transcript.load() -> None
@@ -82,13 +82,13 @@ transcript.query(
 ### Lookup Methods
 
 ```python
-transcript.find_by_uuid(uuid: str) -> Entry | None
+transcript.find_by_uuid(uuid: str) -> MessageEntry | None
 transcript.find_tool_use(tool_use_id: str) -> ToolUseBlock | None
 transcript.find_tool_result(tool_use_id: str) -> ToolResultBlock | None
 transcript.find_snapshot(message_id: str) -> FileHistorySnapshot | None
-transcript.get_parent(entry: Entry) -> Entry | None
-transcript.get_children(entry: Entry) -> list[Entry]
-transcript.get_logical_parent(entry: Entry) -> Entry | None
+transcript.get_parent(entry: MessageEntry) -> MessageEntry | None
+transcript.get_children(entry: MessageEntry) -> list[MessageEntry]
+transcript.get_logical_parent(entry: MessageEntry) -> MessageEntry | None
 ```
 
 ### Export Methods
@@ -191,9 +191,26 @@ query.exists() -> bool
 
 ### Entry (Base)
 
+`Entry` is the base for *any* JSONL stream record — messages and bookkeeping
+alike. It holds only what every record shares; the conversation-graph fields live
+on `MessageEntry` so non-message records (e.g. `FileHistorySnapshot`) don't
+inherit them.
+
 ```python
 class Entry:
     type: str
+    # + JSONL (de)serialization (to_dict) and internal line tracking
+```
+
+### MessageEntry
+
+A record that participates in the conversation graph (carries `uuid`/`parent_uuid`
+and session metadata). `UserMessage`, `AssistantMessage`, and `SystemEntry` extend
+it. `isinstance(e, MessageEntry)` means "has graph identity" — the discriminator
+that separates messages from `FileHistorySnapshot`.
+
+```python
+class MessageEntry(Entry):
     uuid: str
     parent_uuid: str | None
     timestamp: datetime | None
@@ -208,7 +225,7 @@ class Entry:
 ### UserMessage
 
 ```python
-class UserMessage(Entry):
+class UserMessage(MessageEntry):
     type: Literal["user"] = "user"
 
     # Properties
@@ -223,8 +240,8 @@ class UserMessage(Entry):
         cls,
         content: str,
         *,
-        parent: Entry | None = None,
-        context: Entry | None = None,
+        parent: MessageEntry | None = None,
+        context: MessageEntry | None = None,
         **overrides
     ) -> UserMessage
 ```
@@ -232,7 +249,7 @@ class UserMessage(Entry):
 ### AssistantMessage
 
 ```python
-class AssistantMessage(Entry):
+class AssistantMessage(MessageEntry):
     type: Literal["assistant"] = "assistant"
     request_id: str
 
@@ -253,8 +270,8 @@ class AssistantMessage(Entry):
         cls,
         content: str | list[ContentBlock],
         *,
-        parent: Entry | None = None,
-        context: Entry | None = None,
+        parent: MessageEntry | None = None,
+        context: MessageEntry | None = None,
         model: str = "synthetic",
         stop_reason: str = "end_turn",
         **overrides
@@ -264,7 +281,7 @@ class AssistantMessage(Entry):
 ### SystemEntry
 
 ```python
-class SystemEntry(Entry):
+class SystemEntry(MessageEntry):
     type: Literal["system"] = "system"
     subtype: str
     content: str

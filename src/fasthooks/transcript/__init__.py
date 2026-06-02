@@ -14,6 +14,7 @@ from fasthooks.transcript.entries import (
     CompactBoundary,
     Entry,
     FileHistorySnapshot,
+    MessageEntry,
     StopHookSummary,
     SystemEntry,
     TranscriptEntry,
@@ -40,6 +41,7 @@ __all__ = [
     "parse_content_block",
     # Entries
     "Entry",
+    "MessageEntry",
     "UserMessage",
     "AssistantMessage",
     "SystemEntry",
