@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from fasthooks.tasks.base import Task
 
 if TYPE_CHECKING:
-    from claude_agent_sdk import ClaudeAgentOptions  # type: ignore[import-not-found]
+    from claude_agent_sdk import ClaudeAgentOptions
 
 # Model type for type hints
 Model = Literal["sonnet", "opus", "haiku"]
