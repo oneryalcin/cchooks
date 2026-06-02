@@ -85,6 +85,28 @@ class TestContentBlocks:
         assert block.thinking == "Let me consider..."
         assert block.signature == "abc123xyz"
 
+    def test_image_block(self):
+        """image parses to a typed block, no warning, faithful round-trip.
+
+        Used to fall to UnknownBlock (warns + injects text:""). Real 2.1.x shape:
+        {type:image, source:{type:base64, media_type, data}}.
+        """
+        import warnings
+
+        from fasthooks.transcript import ImageBlock
+
+        data = {
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo="},
+        }
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            block = parse_content_block(data)
+        assert isinstance(block, ImageBlock)
+        assert not w
+        assert block.source["media_type"] == "image/png"
+        assert block.model_dump(by_alias=True, exclude_none=True) == data  # no pollution
+
     def test_server_tool_use_block(self):
         """server_tool_use parses to a typed block, no warning, faithful round-trip.
 

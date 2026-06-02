@@ -84,6 +84,20 @@ class ThinkingBlock(BaseModel):
     signature: str = ""
 
 
+class ImageBlock(BaseModel):
+    """An image in a message (2.1.x).
+
+    ``source`` is the image payload — base64 (``{type, media_type, data}``) or a
+    URL (``{type: url, url}``). Kept as a dict so either form round-trips
+    verbatim.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    type: Literal["image"] = "image"
+    source: dict[str, Any] = Field(default_factory=dict)
+
+
 class ServerToolUseBlock(BaseModel):
     """A server-side tool invocation (e.g. ``advisor``, ``web_search``).
 
@@ -132,6 +146,7 @@ ContentBlock = (
     | ToolUseBlock
     | ToolResultBlock
     | ThinkingBlock
+    | ImageBlock
     | ServerToolUseBlock
     | AdvisorToolResultBlock
     | UnknownBlock
@@ -170,6 +185,8 @@ def parse_content_block(
         return tool_result
     elif block_type == "thinking":
         return ThinkingBlock.model_validate(data)
+    elif block_type == "image":
+        return ImageBlock.model_validate(data)
     elif block_type == "server_tool_use":
         return ServerToolUseBlock.model_validate(data)
     elif block_type == "advisor_tool_result":
