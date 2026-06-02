@@ -57,6 +57,15 @@ def build_event(
         event["prompt"] = tool_input.get("prompt", "") if isinstance(tool_input, dict) else ""
     elif event_name in ("Stop", "SubagentStop"):
         event["stop_hook_active"] = False
+    elif event_name == "SessionStart":
+        event["source"] = "startup"  # startup | resume | clear | compact
+    elif event_name == "SessionEnd":
+        event["reason"] = "other"  # clear | logout | prompt_input_exit | other
+    elif event_name == "PreCompact":
+        event["trigger"] = "manual"  # manual | auto
+    elif event_name == "Notification":
+        event["message"] = ""
+        event["notification_type"] = "idle_prompt"
     return event
 
 

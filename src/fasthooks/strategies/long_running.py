@@ -245,7 +245,7 @@ class LongRunningStrategy(Strategy):
         opinionated *prompt* content (initializer/coding session routing,
         progress-file handoff) — that part is intentionally not ported; write
         your own ``@app.on_session_start`` context if you want it. See
-        ``fasthooks add <recipe>`` and HARNESS-PLAN.md.
+        ``examples/long_running_harness.py`` for the full composed replacement.
 
     Implements the two-agent pattern:
     - Initializer: First run sets up feature_list.json, init.sh, git
@@ -294,7 +294,8 @@ class LongRunningStrategy(Strategy):
             "(kill_switch, steer, evidence_gate, evaluator_gate, heartbeat, "
             "commit_on_stop) via include_recipes instead. Its session-routing "
             "prompt content is not ported — write your own on_session_start "
-            "context. See HARNESS-PLAN.md.",
+            "context. See examples/long_running_harness.py for the full "
+            "recipe-composed replacement.",
             DeprecationWarning,
             stacklevel=2,
         )

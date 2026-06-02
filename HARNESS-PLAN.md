@@ -146,6 +146,13 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
   window) — recipes cover the mechanisms; the strategy's prompt/routing content
   is dropped as the opinionated god-class part. Resolves the P4 open question
   (deprecate, not thin-bundle).
+- 2026-06-02 — Deprecation needs a *replacement*, not just a warning: added
+  `examples/long_running_harness.py` — the full harness composed from the 6
+  recipes (with `state_dir`, gate-then-commit ordering, and the session-routing
+  context as a plain `on_session_start` handler). Deprecation message + docs now
+  point at it. Building it surfaced a real `fasthooks test` gap (SessionStart/
+  SessionEnd/PreCompact/Notification envelopes missed their required fields) —
+  fixed + tested.
 - 2026-06-02 — P4 Codex review: standard pass flagged `commit_on_stop` +
   `evaluator_gate` ordering (commit fires before a later gate blocks). Resolved:
   this is the cwc primitive's intended *commit-on-every-stop* behavior (frequent
