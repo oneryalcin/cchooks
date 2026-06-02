@@ -1,6 +1,8 @@
 """Rich transcript modeling for context engineering."""
 from fasthooks.transcript.blocks import (
+    AdvisorToolResultBlock,
     ContentBlock,
+    ServerToolUseBlock,
     TextBlock,
     ThinkingBlock,
     ToolResultBlock,
@@ -37,6 +39,8 @@ __all__ = [
     "ThinkingBlock",
     "ToolResultBlock",
     "ToolUseBlock",
+    "ServerToolUseBlock",
+    "AdvisorToolResultBlock",
     "UnknownBlock",
     "parse_content_block",
     # Entries

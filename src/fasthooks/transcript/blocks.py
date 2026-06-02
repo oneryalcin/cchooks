@@ -84,6 +84,36 @@ class ThinkingBlock(BaseModel):
     signature: str = ""
 
 
+class ServerToolUseBlock(BaseModel):
+    """A server-side tool invocation (e.g. ``advisor``, ``web_search``).
+
+    Same shape as :class:`ToolUseBlock`, but the call runs on Anthropic's side
+    (ids are ``srvtoolu_…``). Added for 2.1.x transcripts.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    type: Literal["server_tool_use"] = "server_tool_use"
+    id: str = ""
+    name: str = ""
+    input: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdvisorToolResultBlock(BaseModel):
+    """Result of a server-side ``advisor`` tool call (2.1.x).
+
+    ``content`` is the advisor payload — a dict (``{type: advisor_result, …}``),
+    string, or list depending on the result. Optional fields default to ``None``
+    so an absent field is not re-emitted on round-trip.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    type: Literal["advisor_tool_result"] = "advisor_tool_result"
+    tool_use_id: str | None = None
+    content: str | dict[str, Any] | list[Any] | None = None
+
+
 class UnknownBlock(BaseModel):
     """Fallback for unrecognized block types.
 
@@ -97,7 +127,15 @@ class UnknownBlock(BaseModel):
 
 
 # Union type for all content blocks
-ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | ThinkingBlock | UnknownBlock
+ContentBlock = (
+    TextBlock
+    | ToolUseBlock
+    | ToolResultBlock
+    | ThinkingBlock
+    | ServerToolUseBlock
+    | AdvisorToolResultBlock
+    | UnknownBlock
+)
 
 
 def parse_content_block(
@@ -132,6 +170,10 @@ def parse_content_block(
         return tool_result
     elif block_type == "thinking":
         return ThinkingBlock.model_validate(data)
+    elif block_type == "server_tool_use":
+        return ServerToolUseBlock.model_validate(data)
+    elif block_type == "advisor_tool_result":
+        return AdvisorToolResultBlock.model_validate(data)
     else:
         # Unknown block type - preserve original type for forward compatibility
         if validate == "strict":
