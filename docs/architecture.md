@@ -153,7 +153,7 @@ fasthooks/
 └── transcript/               # STANDALONE MODULE
     ├── core.py               # Transcript class
     ├── entries.py            # Entry types
-    ├── query.py              # TranscriptQuery
+    ├── blocks.py             # Content block types
     └── ...
 ```
 
@@ -164,7 +164,7 @@ fasthooks/
 from fasthooks.transcript import Transcript
 
 t = Transcript("/path/to/transcript.jsonl")
-t.query().assistants().with_tools().all()
+[m for m in t.assistant_messages if m.has_tool_use]
 t.stats.input_tokens
 ```
 

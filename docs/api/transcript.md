@@ -70,15 +70,6 @@ with transcript.batch():
     ...
 ```
 
-### Query Methods
-
-```python
-transcript.query(
-    include_archived: bool | None = None,
-    include_meta: bool | None = None,
-) -> TranscriptQuery
-```
-
 ### Lookup Methods
 
 ```python
@@ -106,83 +97,6 @@ transcript.to_file(
     format: Literal["md", "html", "json", "jsonl"] = "md",
     **kwargs
 ) -> None
-```
-
----
-
-## TranscriptQuery
-
-Fluent query builder for filtering entries.
-
-```python
-query = transcript.query()
-```
-
-### Type Filters
-
-```python
-query.users() -> TranscriptQuery
-query.assistants() -> TranscriptQuery
-query.system() -> TranscriptQuery
-query.with_tools() -> TranscriptQuery
-query.with_errors() -> TranscriptQuery
-query.with_thinking() -> TranscriptQuery
-```
-
-### Filtering
-
-```python
-query.filter(**kwargs) -> TranscriptQuery
-query.where(predicate: Callable) -> TranscriptQuery
-query.exclude(**kwargs) -> TranscriptQuery
-```
-
-Supported lookups:
-
-| Lookup | Example | Description |
-|--------|---------|-------------|
-| `exact` | `filter(type="user")` | Exact match (default) |
-| `contains` | `filter(text__contains="error")` | Substring |
-| `startswith` | `filter(uuid__startswith="abc")` | Prefix |
-| `endswith` | `filter(text__endswith="!")` | Suffix |
-| `regex` | `filter(text__regex=r"\d+")` | Regex match |
-| `in` | `filter(type__in=["user", "assistant"])` | In list |
-| `gt` | `filter(timestamp__gt=datetime(...))` | Greater than |
-| `gte` | `filter(timestamp__gte=datetime(...))` | Greater or equal |
-| `lt` | `filter(timestamp__lt=datetime(...))` | Less than |
-| `lte` | `filter(timestamp__lte=datetime(...))` | Less or equal |
-| `isnull` | `filter(parent_uuid__isnull=True)` | Is None |
-
-### Time Filters
-
-```python
-query.since(ts: datetime | str) -> TranscriptQuery
-query.until(ts: datetime | str) -> TranscriptQuery
-```
-
-### Ordering
-
-```python
-query.order_by(*fields: str) -> TranscriptQuery
-# Prefix with - for descending: order_by("-timestamp")
-```
-
-### Pagination
-
-```python
-query.limit(n: int) -> TranscriptQuery
-query.offset(n: int) -> TranscriptQuery
-```
-
-### Terminals
-
-```python
-query.all() -> list[TranscriptEntry]
-query.first() -> TranscriptEntry | None
-query.last() -> TranscriptEntry | None
-query.one() -> TranscriptEntry  # Raises if 0 or >1 results
-query.count() -> int
-query.exists() -> bool
 ```
 
 ---

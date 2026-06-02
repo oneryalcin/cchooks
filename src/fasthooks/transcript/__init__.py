@@ -25,13 +25,11 @@ from fasthooks.transcript.entries import (
     parse_entry,
 )
 from fasthooks.transcript.factories import inject_tool_result
-from fasthooks.transcript.query import TranscriptQuery
 from fasthooks.transcript.turn import Turn
 
 __all__ = [
     # Core
     "Transcript",
-    "TranscriptQuery",
     "TranscriptStats",
     "Turn",
     # Blocks
