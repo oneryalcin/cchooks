@@ -123,6 +123,27 @@ def test_evaluator_gate_recursion_guard(tmp_path, monkeypatch):
     assert TestClient(app).send(MockEvent.stop(cwd=str(tmp_path))) is None
 
 
+def test_evaluator_gate_fails_open_on_nonzero_exit(tmp_path):
+    """A non-zero exit (e.g. unauthenticated `claude`) is an infra failure, not a
+    NEEDS_WORK verdict — fail open, don't wedge Stop with a bogus block."""
+    app = HookApp()
+    # exits 1 with no stdout — like an auth/config error
+    cmd = _evaluator_stub(tmp_path, 'echo "auth error" >&2; exit 1')
+    app.include(evaluator_gate(command=cmd))
+    assert TestClient(app).send(MockEvent.stop(cwd=str(tmp_path))) is None
+
+
+def test_evidence_gate_fails_open_without_persistent_state(tmp_path, capsys):
+    """With the default HookApp() (NullState), the gate can't persist evidence
+    across processes — so it must fail OPEN (allow + warn), not deadlock."""
+    app = HookApp()  # no state_dir -> NullState
+    app.include(evidence_gate(results_file="test-results.json"))
+    c = TestClient(app)
+    # No evidence read; with real State this would deny. Here it must allow.
+    assert c.send(MockEvent.write("test-results.json", "{}")) is None
+    assert "inert" in capsys.readouterr().err
+
+
 # ── Scaffolding ──────────────────────────────────────────────────────────────
 
 

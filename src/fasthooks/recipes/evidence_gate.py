@@ -17,8 +17,11 @@ This is a teaching example, not a security boundary — see the known gaps below
 """
 from __future__ import annotations
 
+import sys
+
 from fasthooks.blueprint import Blueprint
 from fasthooks.depends import State
+from fasthooks.depends.state import NullState
 from fasthooks.events.tools import ToolEvent
 from fasthooks.responses import HookResponse, deny
 
@@ -63,6 +66,18 @@ def evidence_gate(results_file: str = DEFAULT_RESULTS_FILE) -> Blueprint:
     def gate_results(event: ToolEvent, state: State) -> HookResponse | None:
         path = event.tool_input.get("file_path", "")
         if not _is_results(path, results_file):
+            return None
+        if isinstance(state, NullState):
+            # No persistent State -> the evidence read can't survive to this
+            # separate hook process, so enforcing here would deny *forever*.
+            # Fail open and tell the developer to wire up persistence, rather
+            # than deadlock the advertised workflow.
+            print(
+                "[fasthooks] evidence_gate is inert: it needs "
+                "HookApp(state_dir=...) to persist evidence reads across hook "
+                "processes. Allowing the write.",
+                file=sys.stderr,
+            )
             return None
         if not state.get(_STATE_KEY):
             return deny(

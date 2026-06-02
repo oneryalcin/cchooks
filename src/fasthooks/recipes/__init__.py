@@ -71,7 +71,11 @@ RECIPES: dict[str, RecipeSpec] = {
         doc=(
             "Point results_file at your project's results file (e.g. "
             "test-results.json). The agent must open a screenshot or console "
-            "log with the Read tool before it can write that file."
+            "log with the Read tool before it can write that file.\n\n"
+            "Requires persistent state: construct your app as "
+            "HookApp(state_dir=...) so the evidence read survives to the "
+            "separate hook process that handles the write. Without it the gate "
+            "fails open (and warns) rather than deadlocking."
         ),
     ),
     "evaluator-gate": RecipeSpec(

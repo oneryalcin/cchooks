@@ -132,6 +132,13 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
   knobs along the way.
 - 2026-06-02 — P2 `evaluator-gate`: ship with 3 guards (recursion sentinel,
   timeout, fail-open). Plumbing + guards verified with a stub evaluator.
+- 2026-06-02 — Codex review (2 passes) caught two real failure modes, both fixed:
+  (a) evidence-gate would *deadlock* under the default `HookApp()` (NullState,
+  no persistence) — now detects NullState and **fails open + warns** (and the
+  scaffold doc requires `state_dir`); (b) evaluator-gate's fail-open missed
+  non-zero subprocess exits (`subprocess.run` doesn't raise without
+  `check=True`) — now `returncode != 0` fails open with a stderr diagnostic.
+  Both have regression tests. **Both gates degrade open on misconfiguration.**
 
 ## Open questions
 

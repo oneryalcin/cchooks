@@ -23,6 +23,7 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+import sys
 
 from fasthooks.blueprint import Blueprint
 from fasthooks.events.lifecycle import Stop
@@ -68,6 +69,19 @@ def evaluator_gate(
             )
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
             # Fail open: a broken/slow/missing evaluator must not wedge the loop.
+            return None
+
+        if proc.returncode != 0:
+            # The evaluator started but failed (auth/config/model/CLI error) —
+            # infrastructure failure, not a NEEDS_WORK verdict. `subprocess.run`
+            # doesn't raise without check=True, so catch it here and fail open
+            # rather than block Stop forever as a bogus "NEEDS_WORK".
+            err = proc.stderr.strip()[:200]
+            print(
+                f"[fasthooks] evaluator_gate: command exited {proc.returncode}, "
+                f"allowing stop (fail-open). {err}",
+                file=sys.stderr,
+            )
             return None
 
         lines = proc.stdout.strip().splitlines()
