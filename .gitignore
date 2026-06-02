@@ -14,3 +14,6 @@ wheels/
 .pytest_cache/
 htmlcov/
 site/
+
+# Local agent session/machine state (omx tooling) — not project artifacts
+.omx/

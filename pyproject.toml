@@ -67,6 +67,13 @@ asyncio_mode = "auto"
 strict = true
 python_version = "3.12"
 
+# claude-agent-sdk is an optional extra ([claude]); treat it as a missing/untyped
+# import so `mypy src` is clean whether or not the extra is installed (no inline
+# per-import ignores that flip between "needed" and "unused" across configs).
+[[tool.mypy.overrides]]
+module = "claude_agent_sdk.*"
+ignore_missing_imports = true
+
 [tool.coverage.run]
 source = ["src/fasthooks"]
 branch = true
