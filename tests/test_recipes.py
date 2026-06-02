@@ -5,6 +5,7 @@ from rich.console import Console
 
 from fasthooks import HookApp
 from fasthooks.recipes import (
+    evaluator_gate,
     evidence_gate,
     include_recipes,
     kill_switch,
@@ -85,6 +86,43 @@ def test_evidence_gate_requires_evidence_read_before_results_write(tmp_path):
     assert c.send(MockEvent.write("test-results.json", "{}")).decision == "deny"
 
 
+def _evaluator_stub(tmp_path, verdict_body: str) -> str:
+    script = tmp_path / "ev.sh"
+    script.write_text(f"#!/usr/bin/env bash\n{verdict_body}\n")
+    script.chmod(0o755)
+    return str(script)
+
+
+def test_evaluator_gate_blocks_stop_on_non_pass(tmp_path):
+    app = HookApp()
+    cmd = _evaluator_stub(tmp_path, 'echo NEEDS_WORK; echo "missing screenshot"')
+    app.include(evaluator_gate(command=cmd))
+    r = TestClient(app).send(MockEvent.stop(cwd=str(tmp_path)))
+    assert r is not None and r.decision == "block"
+    assert "NEEDS_WORK" in r.reason and "missing screenshot" in r.reason
+
+
+def test_evaluator_gate_allows_stop_on_pass(tmp_path):
+    app = HookApp()
+    app.include(evaluator_gate(command=_evaluator_stub(tmp_path, "echo PASS")))
+    assert TestClient(app).send(MockEvent.stop(cwd=str(tmp_path))) is None
+
+
+def test_evaluator_gate_fails_open_when_evaluator_missing(tmp_path):
+    """A missing/broken evaluator must never wedge the session — allow the stop."""
+    app = HookApp()
+    app.include(evaluator_gate(command="fasthooks-no-such-binary-xyz"))
+    assert TestClient(app).send(MockEvent.stop(cwd=str(tmp_path))) is None
+
+
+def test_evaluator_gate_recursion_guard(tmp_path, monkeypatch):
+    """An evaluation must not trigger another: the sentinel env short-circuits."""
+    monkeypatch.setenv("FASTHOOKS_EVALUATOR_GATE_ACTIVE", "1")
+    app = HookApp()
+    app.include(evaluator_gate(command=_evaluator_stub(tmp_path, "echo NEEDS_WORK")))
+    assert TestClient(app).send(MockEvent.stop(cwd=str(tmp_path))) is None
+
+
 # ── Scaffolding ──────────────────────────────────────────────────────────────
 
 
@@ -94,6 +132,8 @@ def test_scaffold_default_is_derived_from_engine(tmp_path):
     assert 'kill_switch(sentinel="AGENT_STOP")' in scaffold_for("kill-switch")
     assert 'steer(sentinel="STEER.md")' in scaffold_for("steer")
     assert 'evidence_gate(results_file="test-results.json")' in scaffold_for("evidence-gate")
+    # evaluator-gate's default embeds a quoted prompt — the scaffold must stay valid Python.
+    compile(scaffold_for("evaluator-gate"), "<scaffold>", "exec")
 
 
 # ── Discovery ────────────────────────────────────────────────────────────────

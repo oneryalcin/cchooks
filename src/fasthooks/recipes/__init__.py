@@ -20,6 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from fasthooks.recipes.evaluator_gate import evaluator_gate
 from fasthooks.recipes.evidence_gate import evidence_gate
 from fasthooks.recipes.kill_switch import kill_switch
 from fasthooks.recipes.steer import steer
@@ -32,6 +33,7 @@ __all__ = [
     "kill_switch",
     "steer",
     "evidence_gate",
+    "evaluator_gate",
     "RECIPES",
     "scaffold_for",
     "include_recipes",
@@ -70,6 +72,16 @@ RECIPES: dict[str, RecipeSpec] = {
             "Point results_file at your project's results file (e.g. "
             "test-results.json). The agent must open a screenshot or console "
             "log with the Read tool before it can write that file."
+        ),
+    ),
+    "evaluator-gate": RecipeSpec(
+        factory=evaluator_gate,
+        summary="Block Stop unless a fresh-context evaluator returns PASS.",
+        doc=(
+            "Edit `command` to your evaluator invocation (e.g. `claude --agent "
+            "evaluator -p '...'`). On Stop it runs the evaluator and blocks "
+            "unless the first output line is PASS; findings become the next "
+            "turn's prompt. Fail-open + recursion-guarded."
         ),
     ),
 }

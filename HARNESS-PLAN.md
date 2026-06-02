@@ -40,7 +40,7 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
 | Agent-maintained handoff (PROGRESS) | ITS OWN NOTES | ✅ `LongRunningStrategy` (richer: dynamic context inject, initializer/coding routing, pre-compact) | extract to recipe(s) |
 | Default-FAIL contract — feature list | — | ✅ `feature_list.json` tracking | keep |
 | **Default-FAIL contract — evidence gate** (`track-read`+`verify-gate`: can't mark pass without Reading evidence) | **PROOF IT LOOKED · HARD GATE** | ✅ **shipped** — `evidence_gate` recipe (P1) | done |
-| **Fresh-context evaluator** (subagent PASS/NEEDS_WORK) | **SECOND OPINION · EVALUATOR** | ⚠️ **plumbing spiked** (Stop hook → subprocess → block) | build (recipe) + pollution guards |
+| **Fresh-context evaluator** (subagent PASS/NEEDS_WORK) | **SECOND OPINION · EVALUATOR** | ✅ **shipped** — `evaluator_gate` recipe (P2), 3 guards | done |
 | **Stall / heartbeat** ("goes quiet → loop moves on") | **LAST CHECK-IN · WATCHDOG** | ⚠️ partial (could emit heartbeat; the *timeout→next* is loop) | hook emits heartbeat; loop owns timeout |
 | Token-budget warnings | — | ✅ `TokenBudgetStrategy` (100k/150k/180k) | keep |
 
@@ -71,9 +71,14 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
       across separate hook processes. Faithful to cwc (simple/teaching version,
       same documented gaps). `fasthooks add evidence-gate`. Also generalized
       `scaffold_for` to read each recipe's first knob (was hardcoded `sentinel`).
-- [ ] **P2 · `evaluator-gate` recipe** — productionize the spike with the
-      pollution guards above. Ships the pattern; the actual evaluator agent
-      config is the user's.
+- [x] **P2 · `evaluator-gate` recipe** — ✅ shipped (2026-06-02). `on_stop`
+      runs a configurable evaluator command, blocks the stop unless the first
+      output line is `PASS` (findings → next turn). Three guards: recursion
+      sentinel env (`FASTHOOKS_EVALUATOR_GATE_ACTIVE`), subprocess timeout,
+      fail-open (missing/slow/erroring evaluator never wedges the session).
+      `fasthooks add evaluator-gate`. All guards verified with a stub; a real
+      `claude --agent` live test is still worth doing but the recipe is safe by
+      design.
 - [ ] **P3 · `heartbeat` primitive** — emit a "still alive" signal (last
       tool-call timestamp) via observer/State so a watchdog/dashboard can detect
       stalls. The *timeout→next-feature* decision stays in the loop.
@@ -125,10 +130,13 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
 - 2026-06-02 — P1 `evidence-gate`: ship the simple/faithful version (documented
   cwc gaps), not the tightened one. Generalized `scaffold_for` for non-`sentinel`
   knobs along the way.
+- 2026-06-02 — P2 `evaluator-gate`: ship with 3 guards (recursion sentinel,
+  timeout, fail-open). Plumbing + guards verified with a stub evaluator.
 
 ## Open questions
 
-- Pollution test: does a real `claude --agent evaluator -p` from a Stop hook
-  recurse / blow cost? Needs a guarded live test. (P2)
+- Live pollution test: a real `claude --agent evaluator -p` from the gate —
+  confirm recursion sentinel + cost behave in practice. Guards make it safe by
+  design; the live run is confirmation, not a blocker.
 - Decompose vs deprecate `LongRunningStrategy` — keep as a convenience bundle, or
   retire it for explicit `include_recipes`? (P4)
