@@ -200,7 +200,7 @@ def test_observability_events_in_order(self):
 
     # Verify decision content
     decision_event = events[1]
-    assert decision_event.decision == "approve"
+    assert decision_event.decision == "allow"  # canonical observability vocab (#26)
 ```
 
 ### Testing Custom Events

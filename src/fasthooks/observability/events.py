@@ -4,9 +4,73 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any, Literal
+from enum import Enum
+from typing import Any, Literal, cast, overload
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# =============================================================================
+# Decision vocabulary
+# =============================================================================
+
+
+class Decision(str, Enum):
+    """The canonical decision vocabulary recorded across observability.
+
+    "allow" is the modern Claude Code term (``permissionDecision: allow/deny/ask``);
+    "approve" is the deprecated wire value that maps to "allow". We record the
+    modern term everywhere so a single query works regardless of which code path
+    produced the row. ``HookResponse.decision`` keeps "approve" internally (it
+    maps correctly at the protocol layer) — only the observability record is
+    normalized.
+    """
+
+    ALLOW = "allow"
+    DENY = "deny"
+    BLOCK = "block"
+    ASK = "ask"
+
+
+@overload
+def normalize_decision(value: object, *, default: Decision) -> Decision | str: ...
+@overload
+def normalize_decision(value: object, *, default: None = ...) -> Decision | str | None: ...
+def normalize_decision(value: object, *, default: Decision | None = None) -> Decision | str | None:
+    """Map a hook response, a raw decision string, or None to :class:`Decision`.
+
+    Accepts a response object (reads ``.behavior`` for permission responses,
+    else ``.decision``), a raw string, an existing :class:`Decision`, or None.
+    ``approve`` is folded into ``allow``. An *unrecognized* string is passed
+    through unchanged rather than masked as ``allow`` — a miswrite should be
+    visible in the data, not silently recorded as the most permissive outcome.
+
+    ``default`` is returned when there is no decision to read (None, or a
+    response like ``context()`` that carries neither). Callers choose what "no
+    decision" means: ``Decision.ALLOW`` for per-handler records (a handler that
+    returned nothing allowed), or None for hook-level records (absent).
+    """
+    if value is None:
+        return default
+    behavior = getattr(value, "behavior", None)
+    if behavior == "deny":
+        return Decision.DENY
+    if behavior == "allow":
+        return Decision.ALLOW
+    raw = getattr(value, "decision", None)
+    if raw is None and isinstance(value, str):
+        raw = value
+    if raw is None:
+        return default
+    if raw == "deny":
+        return Decision.DENY
+    if raw == "block":
+        return Decision.BLOCK
+    if raw == "ask":
+        return Decision.ASK
+    if raw in ("allow", "approve"):
+        return Decision.ALLOW
+    return cast(str, raw)  # unknown: surface it, don't mask as allow
+
 
 # =============================================================================
 # HookApp Observability Events
@@ -34,9 +98,16 @@ class HookObservabilityEvent(BaseModel):
     # Timing (for *_end events only)
     duration_ms: float | None = None  # Handler execution time (excludes DI)
 
-    # Decision (for handler_end, hook_end)
-    decision: str | None = None  # "allow", "deny", "block"
+    # Decision (for handler_end, hook_end) — canonical Decision vocabulary.
+    decision: Decision | str | None = None
     reason: str | None = None  # Denial reason if any
+
+    @field_validator("decision", mode="before")
+    @classmethod
+    def _normalize_decision(cls, v: object) -> Decision | str | None:
+        # Coerce here too, never raise: this model is constructed in HookApp._emit
+        # *outside* a try, so a ValidationError would break the hook (fail-open).
+        return normalize_decision(v)
 
     # Content (truncated)
     input_preview: str | None = None  # First 4096 chars of hook input JSON
@@ -87,10 +158,15 @@ class DecisionEvent(ObservabilityEvent):
     """Emitted when strategy returns a decision."""
 
     event_type: Literal["decision"] = "decision"
-    decision: Literal["approve", "deny", "block"]
+    decision: Decision | str  # canonical Decision; tolerant of unknown passthrough
     reason: str | None = None
     message: str | None = None  # Injected message
     dry_run: bool = False  # True if dry-run mode
+
+    @field_validator("decision", mode="before")
+    @classmethod
+    def _normalize_decision(cls, v: object) -> Decision | str | None:
+        return normalize_decision(v)
 
 
 class ErrorEvent(ObservabilityEvent):

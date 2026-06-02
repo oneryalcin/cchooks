@@ -45,7 +45,11 @@ from fasthooks.events.tools import (
     Write,
 )
 from fasthooks.logging import EventLogger
-from fasthooks.observability.events import HookObservabilityEvent
+from fasthooks.observability.events import (
+    Decision,
+    HookObservabilityEvent,
+    normalize_decision,
+)
 from fasthooks.registry import FAIL_MODE_ATTR, FailMode, HandlerEntry, HandlerRegistry
 from fasthooks.responses import BaseHookResponse, block, deny, deny_permission
 
@@ -645,12 +649,10 @@ class HookApp(HandlerRegistry):
 
         # Emit hook_end
         duration_ms = (time.perf_counter() - start_time) * 1000
-        final_decision = None
-        final_reason = None
-        if response:
-            # Extract decision from response
-            final_decision = getattr(response, "decision", None)
-            final_reason = getattr(response, "reason", None)
+        # hook-level record: no final response means no decision (absent), so
+        # default=None here (unlike per-handler records which default to ALLOW).
+        final_decision = normalize_decision(response)
+        final_reason = getattr(response, "reason", None) if response else None
 
         self._emit(
             event_type="hook_end",
@@ -915,12 +917,10 @@ class HookApp(HandlerRegistry):
 
                 handler_duration = (time.perf_counter() - handler_start) * 1000
 
-                # Determine decision from response
-                decision = "allow"
-                reason = None
-                if response:
-                    decision = getattr(response, "decision", None) or "allow"
-                    reason = getattr(response, "reason", None)
+                # Determine decision from response. A handler that returned
+                # nothing allowed, so a missing decision records as ALLOW.
+                decision = normalize_decision(response, default=Decision.ALLOW)
+                reason = getattr(response, "reason", None) if response else None
 
                 # Emit handler_end
                 self._emit(

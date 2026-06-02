@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from fasthooks.observability.observers.sqlite import migrate_decision_vocab
 from fasthooks.studio.connection_manager import ConnectionManager
 from fasthooks.transcript import Transcript
 
@@ -67,6 +68,12 @@ class ConversationStats(TypedDict):
 
 def create_app(db_path: Path) -> FastAPI:
     """Create FastAPI app with all routes."""
+    # Bring the store to the current schema on open: a legacy studio.db (written
+    # before #26) may still hold "approve" rows. Migrating here — not folding at
+    # each read site — means every endpoint below reads one canonical vocabulary.
+    with sqlite3.connect(db_path) as conn:
+        migrate_decision_vocab(conn)
+
     app = FastAPI(title="FastHooks Studio", version="0.1.0")
 
     # CORS for local development
@@ -363,7 +370,7 @@ def create_app(db_path: Path) -> FastAPI:
         total_hooks = conn.execute("SELECT COUNT(DISTINCT hook_id) FROM events").fetchone()[0]
         total_sessions = conn.execute("SELECT COUNT(DISTINCT session_id) FROM events").fetchone()[0]
 
-        # Decision breakdown
+        # Decision breakdown (the store is already canonical — migrated on open).
         decisions = conn.execute("""
             SELECT decision, COUNT(*) as count
             FROM events

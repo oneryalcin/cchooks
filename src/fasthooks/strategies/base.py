@@ -13,27 +13,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from fasthooks import Blueprint
+from fasthooks.observability.events import Decision, normalize_decision
 from fasthooks.registry import FAIL_MODE_ATTR
 
 from ..observability import DecisionEvent, ErrorEvent, ObservabilityEvent
-
-DecisionLiteral = Literal["approve", "deny", "block"]
-
-
-def _decision_of(result: object) -> DecisionLiteral:
-    """Map a hook response to its observability decision.
-
-    ``HookResponse`` exposes ``.decision`` directly. ``PermissionHookResponse``
-    uses ``.behavior`` ("allow"/"deny") instead, so a permission deny is
-    recorded as a deny rather than silently defaulting to approve. Anything
-    else (context responses, bare allows) is treated as approve.
-    """
-    decision = getattr(result, "decision", None)
-    if decision == "deny" or getattr(result, "behavior", None) == "deny":
-        return "deny"
-    if decision == "block":
-        return "block"
-    return "approve"
 
 
 class StrategyMeta(BaseModel):
@@ -231,7 +214,8 @@ class Strategy(ABC):
 
                 # Emit decision if result returned
                 if result is not None:
-                    decision = _decision_of(result)
+                    # result is not None here, so a missing decision = ALLOW.
+                    decision = normalize_decision(result, default=Decision.ALLOW)
                     self._emit(
                         DecisionEvent(
                             session_id=self._current_session_id,
