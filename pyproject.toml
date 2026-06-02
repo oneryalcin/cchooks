@@ -45,6 +45,7 @@ dev = [
     "pytest-cov>=7.0.0",
     "ruff>=0.14.9",
     "httpx>=0.27",  # FastAPI/Starlette TestClient for studio endpoint tests
+    "jsonschema>=4.0",  # transcript schema oracle (validate to_dict vs canonical)
 ]
 docs = [
     "mkdocs-material>=9.0",

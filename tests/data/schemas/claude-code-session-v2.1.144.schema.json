@@ -1,0 +1,4804 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oneryalcin/agent-schemas/claude-code/v2.1.144/session.schema.json",
+  "title": "Claude Code Session Schema (v2.1.144)",
+  "description": "Schema for Claude Code CLI session JSONL format. Each line in a .jsonl file should validate against this schema. Covers CLI versions 2.1.97 through 2.1.144.",
+  "x-cli-version": "2.1.144",
+  "x-generated-date": "2026-05-19",
+  "x-data-source": "Extended from v2.1.72. Initial subtypes derived from observation of 660 JSONL files spanning CLI 2.1.97-2.1.144. Subsequent pass via mine_binary.py extracted 13 additional attachment subtypes from the CLI 2.1.144 binary (~/.local/share/claude/versions/2.1.144) \u2014 these are canonical from the TypeScript source but not present in the observational corpus. Tool schemas validated against captured/tools_2.1.144.json. Third pass via mine_tools.py recovered 3 binary-only tool input schemas (PowerShell, RemoteTrigger, SendUserFile) that are platform-/environment-gated and don't appear in the macOS default tool capture. Fourth pass via drift_scan.py surfaced and added: entrypoint on User/Assistant/SystemMessage; sessionKind on Attachment/SystemMessage; messageCount on SystemMessage; stop_details/diagnostics/context_management/container on assistant.message; displayPath on AttachmentFile and AttachmentNestedMemory.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/UserMessage"
+    },
+    {
+      "$ref": "#/$defs/AssistantMessage"
+    },
+    {
+      "$ref": "#/$defs/SystemMessage"
+    },
+    {
+      "$ref": "#/$defs/SummaryMessage"
+    },
+    {
+      "$ref": "#/$defs/FileHistorySnapshot"
+    },
+    {
+      "$ref": "#/$defs/QueueOperation"
+    },
+    {
+      "$ref": "#/$defs/ProgressMessage"
+    },
+    {
+      "$ref": "#/$defs/PRLinkMessage"
+    },
+    {
+      "$ref": "#/$defs/AgentNameMessage"
+    },
+    {
+      "$ref": "#/$defs/CustomTitleMessage"
+    },
+    {
+      "$ref": "#/$defs/LastPromptMessage"
+    },
+    {
+      "$ref": "#/$defs/AttachmentMessage"
+    },
+    {
+      "$ref": "#/$defs/PermissionModeMessage"
+    },
+    {
+      "$ref": "#/$defs/AITitleMessage"
+    },
+    {
+      "$ref": "#/$defs/AgentSettingMessage"
+    },
+    {
+      "$ref": "#/$defs/BridgeSessionMessage"
+    },
+    {
+      "$ref": "#/$defs/WorktreeStateMessage"
+    }
+  ],
+  "$defs": {
+    "UUID": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "UUID v4 format"
+    },
+    "ISO8601Timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp"
+    },
+    "CLIVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "CLI version string (semver)",
+      "examples": [
+        "2.0.62",
+        "2.0.76",
+        "2.1.1",
+        "2.1.59",
+        "2.1.63",
+        "2.1.72",
+        "2.1.97",
+        "2.1.119",
+        "2.1.140",
+        "2.1.144"
+      ]
+    },
+    "ModelId": {
+      "type": "string",
+      "description": "Claude model identifier",
+      "examples": [
+        "claude-opus-4-5-20251101",
+        "claude-opus-4-6",
+        "claude-sonnet-4-5-20250929",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001",
+        "<synthetic>"
+      ]
+    },
+    "BuiltInToolName": {
+      "type": "string",
+      "enum": [
+        "Bash",
+        "Read",
+        "Write",
+        "Edit",
+        "Glob",
+        "Grep",
+        "WebSearch",
+        "WebFetch",
+        "Task",
+        "TaskOutput",
+        "TaskStop",
+        "TaskCreate",
+        "TaskUpdate",
+        "TaskList",
+        "TaskGet",
+        "TodoWrite",
+        "AskUserQuestion",
+        "NotebookEdit",
+        "EnterPlanMode",
+        "ExitPlanMode",
+        "EnterWorktree",
+        "Skill",
+        "KillShell",
+        "ToolSearch",
+        "SendMessage",
+        "TeamCreate",
+        "TeamDelete",
+        "ListMcpResourcesTool",
+        "ReadMcpResourceTool",
+        "Agent",
+        "CronCreate",
+        "CronDelete",
+        "CronList",
+        "ExitWorktree",
+        "bash",
+        "Monitor",
+        "PushNotification",
+        "ScheduleWakeup",
+        "ShareOnboardingGuide",
+        "WaitForMcpServers",
+        "RemoteTrigger",
+        "PowerShell",
+        "SendUserFile"
+      ],
+      "description": "Built-in tool name. Includes lowercase \"bash\" (observed Haiku model variant). PowerShell/SendUserFile/RemoteTrigger are conditionally enabled (Windows-only / remote-environment / claude.ai-bridge respectively) and absent from the macOS no-remote default capture, but are documented here from binary mining (see mine_tools.py)."
+    },
+    "MCPToolName": {
+      "type": "string",
+      "pattern": "^mcp__[a-zA-Z0-9_:-]+(__[a-zA-Z0-9_-]+)?$",
+      "description": "MCP tool name pattern: mcp__<server>__<tool>. Server names may contain colons (e.g., plugin:sentry:sentry). The trailing __<tool> segment is optional \u2014 the model occasionally emits an MCP-shaped name with only the server prefix (e.g. 'mcp__claude-in-chrome') as a hallucinated tool call."
+    },
+    "ToolName": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/BuiltInToolName"
+        },
+        {
+          "$ref": "#/$defs/MCPToolName"
+        }
+      ],
+      "description": "Tool name (built-in or MCP)"
+    },
+    "BashInput": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "The bash command to execute"
+        },
+        "description": {
+          "type": "string",
+          "description": "Short description of command purpose"
+        },
+        "timeout": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 600000,
+          "description": "Timeout in milliseconds"
+        },
+        "run_in_background": {
+          "type": "boolean",
+          "description": "Run command in background"
+        },
+        "dangerouslyDisableSandbox": {
+          "type": "boolean",
+          "description": "Disable sandbox mode"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "additionalProperties": false
+    },
+    "ReadInput": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "description": "Absolute path to file"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Line number to start reading from"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of lines to read"
+        },
+        "pages": {
+          "type": "string",
+          "description": "Page range for PDF files (e.g., '1-5')"
+        }
+      },
+      "required": [
+        "file_path"
+      ],
+      "additionalProperties": false
+    },
+    "WriteInput": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "description": "Absolute path to file"
+        },
+        "content": {
+          "type": "string",
+          "description": "Content to write"
+        }
+      },
+      "required": [
+        "file_path",
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "EditInput": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "description": "Absolute path to file"
+        },
+        "old_string": {
+          "type": "string",
+          "description": "Text to replace"
+        },
+        "new_string": {
+          "type": "string",
+          "description": "Replacement text"
+        },
+        "replace_all": {
+          "type": "boolean",
+          "default": false,
+          "description": "Replace all occurrences"
+        }
+      },
+      "required": [
+        "file_path",
+        "old_string",
+        "new_string"
+      ],
+      "additionalProperties": false
+    },
+    "GlobInput": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Glob pattern to match"
+        },
+        "path": {
+          "type": "string",
+          "description": "Directory to search in"
+        }
+      },
+      "required": [
+        "pattern"
+      ],
+      "additionalProperties": false
+    },
+    "GrepInput": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern to search"
+        },
+        "path": {
+          "type": "string",
+          "description": "File or directory to search"
+        },
+        "output_mode": {
+          "type": "string",
+          "enum": [
+            "content",
+            "files_with_matches",
+            "count"
+          ]
+        },
+        "glob": {
+          "type": "string",
+          "description": "Glob pattern to filter files"
+        },
+        "type": {
+          "type": "string",
+          "description": "File type to search (e.g., js, py)"
+        },
+        "head_limit": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Limit output lines"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Skip first N lines"
+        },
+        "multiline": {
+          "type": "boolean",
+          "description": "Enable multiline mode"
+        },
+        "context": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Lines of context (alias for -C)"
+        },
+        "-A": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Lines after match"
+        },
+        "-B": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Lines before match"
+        },
+        "-C": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Lines of context"
+        },
+        "-i": {
+          "type": "boolean",
+          "description": "Case insensitive"
+        },
+        "-n": {
+          "type": "boolean",
+          "description": "Show line numbers"
+        },
+        "-o": {
+          "type": "boolean",
+          "description": "Print only the matched parts of each line (rg -o). Requires output_mode='content'."
+        }
+      },
+      "required": [
+        "pattern"
+      ],
+      "additionalProperties": false
+    },
+    "WebSearchInput": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 2,
+          "description": "Search query"
+        },
+        "allowed_domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Domains to include"
+        },
+        "blocked_domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Domains to exclude"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    },
+    "WebFetchInput": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to fetch"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Prompt for processing content"
+        }
+      },
+      "required": [
+        "url",
+        "prompt"
+      ],
+      "additionalProperties": false
+    },
+    "TaskInput": {
+      "type": "object",
+      "description": "Spawn a subagent or team member.",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "A short (3-5 word) description of the task"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "The task for the agent to perform"
+        },
+        "subagent_type": {
+          "type": "string",
+          "description": "Type of agent to use (e.g., general-purpose, Explore, Plan)"
+        },
+        "run_in_background": {
+          "type": "boolean",
+          "description": "Set to true to run this agent in the background. You will be notified when it completes."
+        },
+        "model": {
+          "type": "string",
+          "enum": [
+            "sonnet",
+            "opus",
+            "haiku"
+          ],
+          "description": "Optional model override for this agent. Takes precedence over the agent definition's model frontmatter. If omitted, uses the agent definition's model, or inherits from the parent."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name for the spawned agent"
+        },
+        "team_name": {
+          "type": "string",
+          "description": "Team name for spawning. Uses current team context if omitted."
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "acceptEdits",
+            "bypassPermissions",
+            "default",
+            "dontAsk",
+            "plan",
+            "auto"
+          ],
+          "description": "Permission mode for spawned teammate (e.g., \"plan\" to require plan approval)."
+        },
+        "isolation": {
+          "type": "string",
+          "enum": [
+            "worktree"
+          ],
+          "description": "Isolation mode \u2014 worktree creates a temporary git worktree"
+        }
+      },
+      "required": [
+        "description",
+        "prompt"
+      ],
+      "additionalProperties": false
+    },
+    "TodoItem": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Task description (imperative form)"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "in_progress",
+            "completed"
+          ]
+        },
+        "activeForm": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Present continuous form"
+        }
+      },
+      "required": [
+        "content",
+        "status",
+        "activeForm"
+      ],
+      "additionalProperties": false
+    },
+    "TodoWriteInput": {
+      "type": "object",
+      "properties": {
+        "todos": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TodoItem"
+          },
+          "description": "Updated todo list"
+        }
+      },
+      "required": [
+        "todos"
+      ],
+      "additionalProperties": false
+    },
+    "QuestionOption": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "Display text for option"
+        },
+        "description": {
+          "type": "string",
+          "description": "Explanation of option"
+        },
+        "markdown": {
+          "type": "string",
+          "description": "Preview content shown when option is focused"
+        }
+      },
+      "required": [
+        "label",
+        "description"
+      ],
+      "additionalProperties": false
+    },
+    "Question": {
+      "type": "object",
+      "properties": {
+        "question": {
+          "type": "string",
+          "description": "The question to ask"
+        },
+        "header": {
+          "type": "string",
+          "maxLength": 12,
+          "description": "Short label (max 12 chars)"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/QuestionOption"
+          },
+          "minItems": 2,
+          "maxItems": 4
+        },
+        "multiSelect": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "question",
+        "header",
+        "options",
+        "multiSelect"
+      ],
+      "additionalProperties": false
+    },
+    "AskUserQuestionInput": {
+      "type": "object",
+      "properties": {
+        "questions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Question"
+          },
+          "minItems": 1,
+          "maxItems": 4
+        },
+        "answers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "User answers"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "markdown": {
+                "type": "string",
+                "description": "Markdown preview content of the selected option"
+              },
+              "notes": {
+                "type": "string",
+                "description": "Free-text notes the user added to their selection"
+              }
+            },
+            "additionalProperties": false
+          },
+          "description": "Per-question annotations keyed by question text"
+        },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string",
+              "description": "Source identifier (e.g., 'remember')"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Tracking/analytics metadata"
+        }
+      },
+      "required": [
+        "questions"
+      ],
+      "additionalProperties": false
+    },
+    "NotebookEditInput": {
+      "type": "object",
+      "properties": {
+        "notebook_path": {
+          "type": "string",
+          "description": "Absolute path to notebook"
+        },
+        "new_source": {
+          "type": "string",
+          "description": "New cell source"
+        },
+        "cell_id": {
+          "type": "string",
+          "description": "Cell ID to edit"
+        },
+        "cell_type": {
+          "type": "string",
+          "enum": [
+            "code",
+            "markdown"
+          ]
+        },
+        "edit_mode": {
+          "type": "string",
+          "enum": [
+            "replace",
+            "insert",
+            "delete"
+          ]
+        }
+      },
+      "required": [
+        "notebook_path",
+        "new_source"
+      ],
+      "additionalProperties": false
+    },
+    "EnterPlanModeInput": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "AllowedPrompt": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "type": "string",
+          "enum": [
+            "Bash"
+          ],
+          "description": "Tool this prompt applies to"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Semantic description of the allowed action"
+        }
+      },
+      "required": [
+        "tool",
+        "prompt"
+      ],
+      "additionalProperties": false
+    },
+    "ExitPlanModeInput": {
+      "type": "object",
+      "properties": {
+        "allowedPrompts": {
+          "description": "Prompt-based permissions needed to implement the plan. These describe categories of actions rather than specific commands.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "description": "The tool this prompt applies to",
+                "type": "string",
+                "enum": [
+                  "Bash"
+                ]
+              },
+              "prompt": {
+                "description": "Semantic description of the action, e.g. \"run tests\", \"install dependencies\"",
+                "type": "string"
+              }
+            },
+            "required": [
+              "tool",
+              "prompt"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": {}
+    },
+    "SkillInput": {
+      "type": "object",
+      "properties": {
+        "skill": {
+          "type": "string",
+          "description": "Skill name to invoke"
+        },
+        "args": {
+          "type": "string",
+          "description": "Optional arguments"
+        }
+      },
+      "required": [
+        "skill"
+      ],
+      "additionalProperties": false
+    },
+    "KillShellInput": {
+      "type": "object",
+      "properties": {
+        "shell_id": {
+          "type": "string",
+          "description": "ID of shell to kill"
+        }
+      },
+      "required": [
+        "shell_id"
+      ],
+      "additionalProperties": false
+    },
+    "TaskOutputInput": {
+      "type": "object",
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "description": "Task ID to get output from"
+        },
+        "block": {
+          "type": "boolean",
+          "default": true,
+          "description": "Wait for completion"
+        },
+        "timeout": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 0,
+          "maximum": 600000,
+          "description": "Max wait time in ms"
+        }
+      },
+      "required": [
+        "task_id",
+        "block",
+        "timeout"
+      ],
+      "additionalProperties": false
+    },
+    "TaskStopInput": {
+      "type": "object",
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "description": "Background task ID to stop"
+        },
+        "shell_id": {
+          "type": "string",
+          "description": "Deprecated: use task_id instead"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ToolSearchInput": {
+      "type": "object",
+      "description": "Fetches full schema definitions for deferred tools so they can be called.",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Query to find deferred tools. Use \"select:<tool_name>\" for direct selection, or keywords to search."
+        },
+        "max_results": {
+          "type": "number",
+          "default": 5,
+          "description": "Maximum number of results to return (default: 5)"
+        }
+      },
+      "required": [
+        "query",
+        "max_results"
+      ],
+      "additionalProperties": false
+    },
+    "SendMessageInput": {
+      "type": "object",
+      "description": "Inter-agent messaging. Replaces the pre-2.1.97 discriminated shape ({type, recipient, content, ...}). New shape: {to, message, summary}, where message is a string OR a typed control payload (shutdown_request, shutdown_response, plan_approval_response).",
+      "properties": {
+        "to": {
+          "type": "string",
+          "description": "Recipient teammate name."
+        },
+        "summary": {
+          "type": "string",
+          "description": "5-10 word UI preview (required when message is a string)."
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Plain text message content."
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "shutdown_request"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "shutdown_response"
+                },
+                "request_id": {
+                  "type": "string"
+                },
+                "approve": {
+                  "type": "boolean"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "request_id",
+                "approve"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "plan_approval_response"
+                },
+                "request_id": {
+                  "type": "string"
+                },
+                "approve": {
+                  "type": "boolean"
+                },
+                "feedback": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "request_id",
+                "approve"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "to",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "TaskCreateInput": {
+      "type": "object",
+      "description": "Create a task in the team's shared task list.",
+      "properties": {
+        "subject": {
+          "type": "string",
+          "description": "Brief task title (imperative form)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description with context and acceptance criteria"
+        },
+        "activeForm": {
+          "type": "string",
+          "description": "Present continuous form shown in spinner"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Arbitrary metadata"
+        }
+      },
+      "required": [
+        "subject",
+        "description"
+      ],
+      "additionalProperties": false
+    },
+    "TaskUpdateInput": {
+      "type": "object",
+      "description": "Update an existing task's status, description, or dependencies.",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "description": "Task ID to update"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "in_progress",
+            "completed",
+            "deleted"
+          ],
+          "description": "New task status"
+        },
+        "subject": {
+          "type": "string",
+          "description": "New task title"
+        },
+        "description": {
+          "type": "string",
+          "description": "New task description"
+        },
+        "activeForm": {
+          "type": "string",
+          "description": "Present continuous form"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Agent name to assign"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Metadata to merge"
+        },
+        "addBlocks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Task IDs this task blocks"
+        },
+        "addBlockedBy": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Task IDs that block this task"
+        }
+      },
+      "required": [
+        "taskId"
+      ],
+      "additionalProperties": false
+    },
+    "TaskListInput": {
+      "type": "object",
+      "description": "List all tasks in the team's task list.",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "TaskGetInput": {
+      "type": "object",
+      "description": "Retrieve a task by ID.",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "description": "Task ID to retrieve"
+        }
+      },
+      "required": [
+        "taskId"
+      ],
+      "additionalProperties": false
+    },
+    "TeamCreateInput": {
+      "type": "object",
+      "description": "Create a new team for multi-agent coordination.",
+      "properties": {
+        "team_name": {
+          "type": "string",
+          "description": "Slug/identifier for the team"
+        },
+        "description": {
+          "type": "string",
+          "description": "Team purpose"
+        },
+        "agent_type": {
+          "type": "string",
+          "description": "Role of the calling agent in the team"
+        }
+      },
+      "required": [
+        "team_name"
+      ],
+      "additionalProperties": false
+    },
+    "TeamDeleteInput": {
+      "type": "object",
+      "description": "Delete the current team and clean up resources.",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "EnterWorktreeInput": {
+      "type": "object",
+      "description": "Enter a git worktree isolation context (new branch or existing worktree path).",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Optional name for a new worktree. Mutually exclusive with `path`."
+        },
+        "path": {
+          "type": "string",
+          "description": "Path to an existing worktree to switch into. Mutually exclusive with `name`. Added in 2.1.105."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ListMcpResourcesInput": {
+      "type": "object",
+      "description": "List available resources from configured MCP servers.",
+      "properties": {
+        "server": {
+          "type": "string",
+          "description": "Optional server name to filter by"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ReadMcpResourceInput": {
+      "type": "object",
+      "description": "Read a specific resource from an MCP server.",
+      "properties": {
+        "server": {
+          "type": "string",
+          "description": "MCP server name"
+        },
+        "uri": {
+          "type": "string",
+          "description": "Resource URI to read"
+        }
+      },
+      "required": [
+        "server",
+        "uri"
+      ],
+      "additionalProperties": false
+    },
+    "MCPToolInput": {
+      "type": "object",
+      "description": "Generic MCP tool input",
+      "additionalProperties": true
+    },
+    "ToolInput": {
+      "description": "Tool-specific input parameters",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/BashInput"
+        },
+        {
+          "$ref": "#/$defs/ReadInput"
+        },
+        {
+          "$ref": "#/$defs/WriteInput"
+        },
+        {
+          "$ref": "#/$defs/EditInput"
+        },
+        {
+          "$ref": "#/$defs/GlobInput"
+        },
+        {
+          "$ref": "#/$defs/GrepInput"
+        },
+        {
+          "$ref": "#/$defs/WebSearchInput"
+        },
+        {
+          "$ref": "#/$defs/WebFetchInput"
+        },
+        {
+          "$ref": "#/$defs/TaskInput"
+        },
+        {
+          "$ref": "#/$defs/TaskOutputInput"
+        },
+        {
+          "$ref": "#/$defs/TaskStopInput"
+        },
+        {
+          "$ref": "#/$defs/ToolSearchInput"
+        },
+        {
+          "$ref": "#/$defs/SendMessageInput"
+        },
+        {
+          "$ref": "#/$defs/TaskCreateInput"
+        },
+        {
+          "$ref": "#/$defs/TaskUpdateInput"
+        },
+        {
+          "$ref": "#/$defs/TaskListInput"
+        },
+        {
+          "$ref": "#/$defs/TaskGetInput"
+        },
+        {
+          "$ref": "#/$defs/TeamCreateInput"
+        },
+        {
+          "$ref": "#/$defs/TeamDeleteInput"
+        },
+        {
+          "$ref": "#/$defs/EnterWorktreeInput"
+        },
+        {
+          "$ref": "#/$defs/ListMcpResourcesInput"
+        },
+        {
+          "$ref": "#/$defs/ReadMcpResourceInput"
+        },
+        {
+          "$ref": "#/$defs/TodoWriteInput"
+        },
+        {
+          "$ref": "#/$defs/AskUserQuestionInput"
+        },
+        {
+          "$ref": "#/$defs/NotebookEditInput"
+        },
+        {
+          "$ref": "#/$defs/EnterPlanModeInput"
+        },
+        {
+          "$ref": "#/$defs/ExitPlanModeInput"
+        },
+        {
+          "$ref": "#/$defs/SkillInput"
+        },
+        {
+          "$ref": "#/$defs/KillShellInput"
+        },
+        {
+          "$ref": "#/$defs/MCPToolInput"
+        },
+        {
+          "$ref": "#/$defs/CronCreateInput"
+        },
+        {
+          "$ref": "#/$defs/CronDeleteInput"
+        },
+        {
+          "$ref": "#/$defs/CronListInput"
+        },
+        {
+          "$ref": "#/$defs/ExitWorktreeInput"
+        },
+        {
+          "$ref": "#/$defs/MonitorInput"
+        },
+        {
+          "$ref": "#/$defs/PushNotificationInput"
+        },
+        {
+          "$ref": "#/$defs/ScheduleWakeupInput"
+        },
+        {
+          "$ref": "#/$defs/ShareOnboardingGuideInput"
+        },
+        {
+          "$ref": "#/$defs/WaitForMcpServersInput"
+        },
+        {
+          "$ref": "#/$defs/PowerShellInput"
+        },
+        {
+          "$ref": "#/$defs/RemoteTriggerInput"
+        },
+        {
+          "$ref": "#/$defs/SendUserFileInput"
+        }
+      ]
+    },
+    "TextBlock": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "ThinkingBlock": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "thinking"
+        },
+        "thinking": {
+          "type": "string",
+          "description": "Claude's reasoning"
+        },
+        "signature": {
+          "type": "string",
+          "description": "Cryptographic signature (base64)"
+        }
+      },
+      "required": [
+        "type",
+        "thinking",
+        "signature"
+      ],
+      "additionalProperties": false
+    },
+    "ToolUseCaller": {
+      "type": "object",
+      "description": "Identifies how the tool was invoked. Currently always {\"type\": \"direct\"}.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Caller type (e.g., 'direct')"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "ToolUseBlock": {
+      "type": "object",
+      "description": "Tool invocation block. New in v2.1.x: 'caller' field on every tool_use block.",
+      "properties": {
+        "type": {
+          "const": "tool_use"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^toolu_[a-zA-Z0-9]+$",
+          "description": "Tool use ID"
+        },
+        "name": {
+          "$ref": "#/$defs/ToolName"
+        },
+        "input": {
+          "type": "object",
+          "description": "Tool-specific input"
+        },
+        "caller": {
+          "$ref": "#/$defs/ToolUseCaller"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "name",
+        "input"
+      ],
+      "additionalProperties": false
+    },
+    "ToolReferenceBlock": {
+      "type": "object",
+      "description": "Compact reference to a tool (returned by ToolSearch). New in v2.1.x.",
+      "properties": {
+        "type": {
+          "const": "tool_reference"
+        },
+        "tool_name": {
+          "type": "string",
+          "description": "Name of the referenced tool"
+        }
+      },
+      "required": [
+        "type",
+        "tool_name"
+      ],
+      "additionalProperties": false
+    },
+    "ToolResultContentItem": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "text"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "image"
+            },
+            "source": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "base64"
+                },
+                "media_type": {
+                  "type": "string",
+                  "enum": [
+                    "image/png",
+                    "image/jpeg",
+                    "image/gif",
+                    "image/webp"
+                  ]
+                },
+                "data": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "media_type",
+                "data"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "source"
+          ]
+        },
+        {
+          "$ref": "#/$defs/ToolReferenceBlock"
+        },
+        {
+          "type": "object",
+          "description": "Generic tool-result item (e.g. MCP resource descriptor with name/uri/description/mimeType/_meta/server).",
+          "additionalProperties": true
+        }
+      ]
+    },
+    "ToolResultBlock": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "tool_result"
+        },
+        "tool_use_id": {
+          "type": "string",
+          "pattern": "^toolu_[a-zA-Z0-9]+$"
+        },
+        "content": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ToolResultContentItem"
+              }
+            }
+          ]
+        },
+        "is_error": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "tool_use_id",
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "ImageBlock": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "image"
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "base64"
+            },
+            "media_type": {
+              "type": "string",
+              "enum": [
+                "image/png",
+                "image/jpeg",
+                "image/gif",
+                "image/webp"
+              ]
+            },
+            "data": {
+              "type": "string",
+              "contentEncoding": "base64"
+            }
+          },
+          "required": [
+            "type",
+            "media_type",
+            "data"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "DocumentBlock": {
+      "type": "object",
+      "description": "PDF or document content block (e.g. pasted PDFs)",
+      "properties": {
+        "type": {
+          "const": "document"
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "base64"
+              ]
+            },
+            "media_type": {
+              "type": "string",
+              "enum": [
+                "application/pdf"
+              ]
+            },
+            "data": {
+              "type": "string",
+              "contentEncoding": "base64"
+            }
+          },
+          "required": [
+            "type",
+            "media_type",
+            "data"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "ContentBlock": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TextBlock"
+        },
+        {
+          "$ref": "#/$defs/ThinkingBlock"
+        },
+        {
+          "$ref": "#/$defs/ToolUseBlock"
+        },
+        {
+          "$ref": "#/$defs/ToolResultBlock"
+        },
+        {
+          "$ref": "#/$defs/ImageBlock"
+        },
+        {
+          "$ref": "#/$defs/DocumentBlock"
+        },
+        {
+          "$ref": "#/$defs/ToolReferenceBlock"
+        },
+        {
+          "$ref": "#/$defs/ServerToolUseBlock"
+        },
+        {
+          "$ref": "#/$defs/AdvisorToolResultBlock"
+        }
+      ]
+    },
+    "ThinkingMetadata": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "disabled": {
+          "type": "boolean"
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "UsageInfo": {
+      "type": "object",
+      "description": "Token usage and inference metadata. New in v2.1.x: inference_geo, iterations, speed.",
+      "properties": {
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cache_creation_input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cache_read_input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cache_creation": {
+          "type": "object",
+          "properties": {
+            "ephemeral_5m_input_tokens": {
+              "type": "integer"
+            },
+            "ephemeral_1h_input_tokens": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": true
+        },
+        "service_tier": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "server_tool_use": {
+          "type": "object",
+          "properties": {
+            "web_search_requests": {
+              "type": "integer"
+            },
+            "web_fetch_requests": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": true
+        },
+        "inference_geo": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Inference geographic region (e.g., 'not_available', empty string, or null)"
+        },
+        "iterations": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "description": "Iteration type. Known: 'message', 'advisor_message'."
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "Model used for this iteration (set when type=advisor_message)."
+                  },
+                  "input_tokens": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "output_tokens": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "cache_creation_input_tokens": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "cache_read_input_tokens": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "cache_creation": {
+                    "type": "object",
+                    "properties": {
+                      "ephemeral_5m_input_tokens": {
+                        "type": "integer"
+                      },
+                      "ephemeral_1h_input_tokens": {
+                        "type": "integer"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Per-iteration usage breakdown. advisor_message entries appear when the assistant called the advisor server tool."
+        },
+        "speed": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Inference speed tier (e.g., 'standard', or null)"
+        }
+      },
+      "required": [
+        "input_tokens",
+        "output_tokens"
+      ],
+      "additionalProperties": true
+    },
+    "UserMessageContent": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContentBlock"
+          }
+        }
+      ],
+      "description": "User message content - string when isCompactSummary, array otherwise"
+    },
+    "UserMessage": {
+      "type": "object",
+      "description": "User input message. New in v2.1.97+: 'auto' permission mode, origin, promptId, sessionKind, mcpMeta, sourceToolUseID, sidechainParentUuid.",
+      "properties": {
+        "type": {
+          "const": "user"
+        },
+        "uuid": {
+          "$ref": "#/$defs/UUID"
+        },
+        "parentUuid": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/UUID"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        },
+        "timestamp": {
+          "$ref": "#/$defs/ISO8601Timestamp"
+        },
+        "version": {
+          "$ref": "#/$defs/CLIVersion"
+        },
+        "cwd": {
+          "type": "string",
+          "description": "Current working directory"
+        },
+        "gitBranch": {
+          "type": "string",
+          "description": "Git branch name"
+        },
+        "isSidechain": {
+          "type": "boolean"
+        },
+        "userType": {
+          "type": "string",
+          "const": "external"
+        },
+        "message": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "const": "user"
+            },
+            "content": {
+              "$ref": "#/$defs/UserMessageContent"
+            }
+          },
+          "required": [
+            "role",
+            "content"
+          ],
+          "additionalProperties": true
+        },
+        "thinkingMetadata": {
+          "$ref": "#/$defs/ThinkingMetadata"
+        },
+        "todos": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TodoItem"
+          }
+        },
+        "isMeta": {
+          "type": "boolean"
+        },
+        "isCompactSummary": {
+          "type": "boolean",
+          "description": "When true, content is summary string"
+        },
+        "isVisibleInTranscriptOnly": {
+          "type": "boolean",
+          "description": "Message visible in transcript but not sent to model (v2.1.x+)"
+        },
+        "agentId": {
+          "type": "string",
+          "description": "Agent ID (in agent session files)"
+        },
+        "slug": {
+          "type": "string",
+          "description": "Human-readable session name"
+        },
+        "toolUseResult": {
+          "oneOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ToolResultContentItem"
+              },
+              "description": "Tool result content items"
+            }
+          ],
+          "description": "Tool result metadata (v2.1.1+) \u2014 can be object, string, or array of content items"
+        },
+        "sourceToolAssistantUUID": {
+          "$ref": "#/$defs/UUID",
+          "description": "UUID of assistant message that triggered tool (v2.1.1+)"
+        },
+        "permissionMode": {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "bypassPermissions",
+            "dontAsk",
+            "plan",
+            "auto"
+          ],
+          "description": "Active permission mode for this turn. 'auto' added in v2.1.97+."
+        },
+        "teamName": {
+          "type": "string",
+          "description": "Team name when operating in a team context (v2.1.x+)"
+        },
+        "imagePasteIds": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "description": "IDs of pasted images (v2.1.x+)"
+        },
+        "planContent": {
+          "type": "string",
+          "description": "Plan mode content (markdown plan text)"
+        },
+        "promptId": {
+          "type": "string",
+          "description": "Stable prompt identifier (v2.1.x+)"
+        },
+        "origin": {
+          "$ref": "#/$defs/OriginInfo"
+        },
+        "sessionKind": {
+          "type": "string",
+          "description": "Session kind (e.g. 'background', 'subagent')."
+        },
+        "mcpMeta": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "MCP-server-supplied metadata attached to a tool result."
+        },
+        "sourceToolUseID": {
+          "type": "string",
+          "description": "Originating tool use ID (when this user message carries a tool_result)."
+        },
+        "sidechainParentUuid": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/UUID"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Parent UUID for sidechain messages."
+        },
+        "entrypoint": {
+          "type": "string",
+          "description": "Where this session line was produced from (e.g. 'cli', 'sdk-py', 'sdk-cli', 'sdk-ts')."
+        }
+      },
+      "required": [
+        "type",
+        "uuid",
+        "parentUuid",
+        "sessionId",
+        "timestamp",
+        "version",
+        "cwd",
+        "isSidechain",
+        "userType",
+        "message"
+      ],
+      "additionalProperties": true
+    },
+    "AssistantMessage": {
+      "type": "object",
+      "description": "Claude's response message. New in v2.1.97+: advisorModel, attributionAgent/Plugin/Skill, origin, apiErrorStatus, errorDetails, agentId, slug, sessionKind, sidechainParentUuid.",
+      "properties": {
+        "type": {
+          "const": "assistant"
+        },
+        "uuid": {
+          "$ref": "#/$defs/UUID"
+        },
+        "parentUuid": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/UUID"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        },
+        "timestamp": {
+          "$ref": "#/$defs/ISO8601Timestamp"
+        },
+        "version": {
+          "$ref": "#/$defs/CLIVersion"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "gitBranch": {
+          "type": "string"
+        },
+        "isSidechain": {
+          "type": "boolean"
+        },
+        "userType": {
+          "type": "string",
+          "const": "external"
+        },
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[a-zA-Z0-9]+$",
+          "description": "API request ID"
+        },
+        "message": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "$ref": "#/$defs/ModelId"
+            },
+            "id": {
+              "type": "string",
+              "description": "API message ID (msg_* pattern or UUID for synthetic)"
+            },
+            "type": {
+              "const": "message"
+            },
+            "role": {
+              "const": "assistant"
+            },
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ContentBlock"
+              }
+            },
+            "stop_reason": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "end_turn",
+                    "tool_use",
+                    "max_tokens",
+                    "stop_sequence"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stop_sequence": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "usage": {
+              "$ref": "#/$defs/UsageInfo"
+            },
+            "stop_details": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              ],
+              "description": "Structured stop-reason detail (object when present, null otherwise)."
+            },
+            "diagnostics": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "cache_miss_reason": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              ],
+              "description": "Diagnostic metadata about how the model response was produced (cache miss reasons, etc.)."
+            },
+            "context_management": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              ],
+              "description": "Context-management hints returned by the model."
+            },
+            "container": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              ],
+              "description": "Container/sandbox metadata when the response was produced inside a managed runtime."
+            }
+          },
+          "required": [
+            "model",
+            "id",
+            "type",
+            "role",
+            "content",
+            "stop_reason",
+            "stop_sequence",
+            "usage"
+          ],
+          "additionalProperties": true
+        },
+        "agentId": {
+          "type": "string",
+          "description": "Agent ID (in subagent session files)."
+        },
+        "slug": {
+          "type": "string",
+          "description": "Human-readable session name."
+        },
+        "isApiErrorMessage": {
+          "type": "boolean",
+          "description": "Whether this is an API error message"
+        },
+        "error": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Short error tag (e.g. 'server_error')."
+            },
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "Structured error payload."
+            }
+          ],
+          "description": "Error payload when this assistant turn surfaced an API error."
+        },
+        "teamName": {
+          "type": "string",
+          "description": "Team name when operating in a team context (v2.1.x+)"
+        },
+        "sessionKind": {
+          "type": "string",
+          "description": "Session kind (e.g. 'background', 'subagent')."
+        },
+        "advisorModel": {
+          "type": "string",
+          "description": "Model used for advisor consultations (set when this assistant turn invoked the advisor server tool)."
+        },
+        "attributionAgent": {
+          "type": "string",
+          "description": "Agent attribution for plugin-supplied output."
+        },
+        "attributionPlugin": {
+          "type": "string",
+          "description": "Plugin attribution for plugin-supplied output."
+        },
+        "attributionSkill": {
+          "type": "string",
+          "description": "Skill attribution for skill-supplied output."
+        },
+        "origin": {
+          "$ref": "#/$defs/OriginInfo"
+        },
+        "apiErrorStatus": {
+          "type": [
+            "integer",
+            "string"
+          ],
+          "description": "HTTP status code (or string label) from the upstream API error."
+        },
+        "errorDetails": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Raw error body (e.g. JSON string returned by upstream API)."
+            },
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "Structured error details."
+            }
+          ],
+          "description": "Structured error details, or the raw upstream error body as a string."
+        },
+        "sidechainParentUuid": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/UUID"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Parent UUID for sidechain messages."
+        },
+        "entrypoint": {
+          "type": "string",
+          "description": "Where this session line was produced from (e.g. 'cli', 'sdk-py', 'sdk-cli', 'sdk-ts')."
+        }
+      },
+      "required": [
+        "type",
+        "uuid",
+        "parentUuid",
+        "sessionId",
+        "timestamp",
+        "version",
+        "cwd",
+        "isSidechain",
+        "userType",
+        "message"
+      ],
+      "additionalProperties": true
+    },
+    "SystemMessage": {
+      "type": "object",
+      "description": "System event message. Includes bridge_status, compact_boundary with compactMetadata, turn_duration, local_command subtypes.",
+      "properties": {
+        "type": {
+          "const": "system"
+        },
+        "uuid": {
+          "$ref": "#/$defs/UUID"
+        },
+        "parentUuid": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/UUID"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        },
+        "timestamp": {
+          "$ref": "#/$defs/ISO8601Timestamp"
+        },
+        "version": {
+          "$ref": "#/$defs/CLIVersion"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "gitBranch": {
+          "type": "string"
+        },
+        "isSidechain": {
+          "type": "boolean"
+        },
+        "userType": {
+          "type": "string",
+          "const": "external"
+        },
+        "subtype": {
+          "type": "string",
+          "enum": [
+            "local_command",
+            "turn_duration",
+            "api_error",
+            "stop_hook_summary",
+            "compact_boundary",
+            "microcompact_boundary",
+            "bridge_status",
+            "away_summary",
+            "scheduled_task_fire",
+            "informational"
+          ],
+          "description": "System message subtype. away_summary/scheduled_task_fire/informational added in v2.1.97+."
+        },
+        "content": {
+          "type": "string",
+          "description": "Message content"
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "info",
+            "warn",
+            "error",
+            "suggestion",
+            "warning"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Duration in milliseconds"
+        },
+        "isMeta": {
+          "type": "boolean"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "hookCount": {
+          "type": "integer",
+          "description": "Number of hooks triggered (stop_hook_summary)"
+        },
+        "hookInfos": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "Hook information (stop_hook_summary)"
+        },
+        "hookErrors": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "description": "Hook errors (stop_hook_summary)"
+        },
+        "preventedContinuation": {
+          "type": "boolean",
+          "description": "Whether hook prevented continuation"
+        },
+        "stopReason": {
+          "type": "string",
+          "description": "Reason for stop"
+        },
+        "hasOutput": {
+          "type": "boolean",
+          "description": "Whether there is output"
+        },
+        "toolUseID": {
+          "type": "string",
+          "description": "Tool use ID"
+        },
+        "logicalParentUuid": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/UUID"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Logical parent UUID for compact_boundary (references pre-compaction message)"
+        },
+        "compactMetadata": {
+          "type": "object",
+          "description": "Metadata for compact_boundary events",
+          "properties": {
+            "trigger": {
+              "type": "string",
+              "description": "What triggered compaction (e.g. manual, auto)"
+            },
+            "preTokens": {
+              "type": "integer",
+              "description": "Token count before compaction"
+            }
+          },
+          "additionalProperties": true
+        },
+        "microcompactMetadata": {
+          "type": "object",
+          "properties": {
+            "trigger": {
+              "type": "string"
+            },
+            "preTokens": {
+              "type": "integer"
+            },
+            "tokensSaved": {
+              "type": "integer"
+            },
+            "compactedToolIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "clearedAttachmentUUIDs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "description": "Microcompact metadata (microcompact_boundary). Added in v2.1.63."
+        },
+        "teamName": {
+          "type": "string",
+          "description": "Team name when in team context (v2.1.x+)"
+        },
+        "error": {
+          "type": "object",
+          "description": "Error details (api_error subtype). Contains cause object mirroring the top-level cause field.",
+          "properties": {
+            "cause": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Error code (e.g., ECONNRESET, ConnectionRefused, FailedToOpenSocket)"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Request URL"
+                },
+                "errno": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL for bridge_status subtype (remote control session link)"
+        },
+        "cause": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Error code (e.g., ConnectionRefused, FailedToOpenSocket)"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Request URL path"
+                },
+                "errno": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
+          ],
+          "description": "Error cause \u2014 string or object with code/path/errno (api_error retry metadata)"
+        },
+        "retryInMs": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Retry delay in milliseconds (can be fractional)"
+        },
+        "retryAttempt": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Current retry attempt number"
+        },
+        "maxRetries": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum retry attempts"
+        },
+        "entrypoint": {
+          "type": "string",
+          "description": "Where this session line was produced from (e.g. 'cli', 'sdk-py', 'sdk-cli', 'sdk-ts')."
+        },
+        "sessionKind": {
+          "type": "string",
+          "description": "Session kind (e.g. 'background', 'subagent')."
+        },
+        "messageCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total message count up to this point (surfaced on turn_duration system messages)."
+        }
+      },
+      "required": [
+        "type",
+        "uuid",
+        "parentUuid",
+        "sessionId",
+        "timestamp",
+        "version",
+        "cwd",
+        "isSidechain",
+        "userType",
+        "subtype"
+      ],
+      "additionalProperties": true
+    },
+    "SummaryMessage": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "summary"
+        },
+        "summary": {
+          "type": "string",
+          "description": "Human-readable conversation summary"
+        },
+        "leafUuid": {
+          "$ref": "#/$defs/UUID",
+          "description": "UUID of last summarized message"
+        }
+      },
+      "required": [
+        "type",
+        "summary",
+        "leafUuid"
+      ],
+      "additionalProperties": true
+    },
+    "FileBackupInfo": {
+      "type": "object",
+      "properties": {
+        "originalContent": {
+          "type": "string",
+          "description": "Original file content (legacy)"
+        },
+        "path": {
+          "type": "string",
+          "description": "File path (legacy)"
+        },
+        "backupFileName": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Backup file identifier"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Backup version number"
+        },
+        "backupTime": {
+          "$ref": "#/$defs/ISO8601Timestamp",
+          "description": "Backup timestamp"
+        }
+      },
+      "additionalProperties": true
+    },
+    "FileHistorySnapshot": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "file-history-snapshot"
+        },
+        "messageId": {
+          "$ref": "#/$defs/UUID"
+        },
+        "snapshot": {
+          "type": "object",
+          "properties": {
+            "messageId": {
+              "$ref": "#/$defs/UUID"
+            },
+            "trackedFileBackups": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/FileBackupInfo"
+              },
+              "description": "Map of file path to backup info"
+            },
+            "timestamp": {
+              "$ref": "#/$defs/ISO8601Timestamp"
+            }
+          },
+          "required": [
+            "messageId",
+            "trackedFileBackups",
+            "timestamp"
+          ],
+          "additionalProperties": true
+        },
+        "isSnapshotUpdate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "messageId",
+        "snapshot",
+        "isSnapshotUpdate"
+      ],
+      "additionalProperties": true
+    },
+    "QueueOperation": {
+      "type": "object",
+      "description": "Queue operation for message queuing",
+      "properties": {
+        "type": {
+          "const": "queue-operation"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "enqueue",
+            "remove",
+            "dequeue",
+            "popAll"
+          ]
+        },
+        "timestamp": {
+          "$ref": "#/$defs/ISO8601Timestamp"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        },
+        "content": {
+          "type": "string",
+          "description": "Message content (for enqueue)"
+        }
+      },
+      "required": [
+        "type",
+        "operation",
+        "timestamp",
+        "sessionId"
+      ],
+      "additionalProperties": true
+    },
+    "MCPProgressData": {
+      "type": "object",
+      "description": "MCP tool execution progress",
+      "properties": {
+        "type": {
+          "const": "mcp_progress"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "started",
+            "completed",
+            "failed"
+          ]
+        },
+        "serverName": {
+          "type": "string",
+          "description": "MCP server name (e.g., 'linear-server', 'plugin:sentry:sentry')"
+        },
+        "toolName": {
+          "type": "string",
+          "description": "MCP tool name"
+        },
+        "elapsedTimeMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Elapsed time (present on completed/failed)"
+        }
+      },
+      "required": [
+        "type",
+        "status",
+        "serverName",
+        "toolName"
+      ],
+      "additionalProperties": true
+    },
+    "BashProgressData": {
+      "type": "object",
+      "description": "Bash command execution progress",
+      "properties": {
+        "type": {
+          "const": "bash_progress"
+        },
+        "output": {
+          "type": "string",
+          "description": "Truncated stdout/stderr"
+        },
+        "fullOutput": {
+          "type": "string",
+          "description": "Full stdout/stderr"
+        },
+        "elapsedTimeSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalLines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total bytes (background tasks)"
+        },
+        "taskId": {
+          "type": "string",
+          "description": "Background task ID"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Configured timeout"
+        }
+      },
+      "required": [
+        "type",
+        "output",
+        "fullOutput",
+        "elapsedTimeSeconds",
+        "totalLines"
+      ],
+      "additionalProperties": true
+    },
+    "HookProgressData": {
+      "type": "object",
+      "description": "Hook execution progress",
+      "properties": {
+        "type": {
+          "const": "hook_progress"
+        },
+        "hookEvent": {
+          "type": "string",
+          "enum": [
+            "PreToolUse",
+            "PostToolUse",
+            "SessionStart",
+            "SubagentStop",
+            "Stop"
+          ],
+          "description": "Hook event type"
+        },
+        "hookName": {
+          "type": "string",
+          "description": "Hook name (e.g., 'PostToolUse:Grep')"
+        },
+        "command": {
+          "type": "string",
+          "description": "Hook command"
+        }
+      },
+      "required": [
+        "type",
+        "hookEvent",
+        "hookName",
+        "command"
+      ],
+      "additionalProperties": true
+    },
+    "AgentProgressData": {
+      "type": "object",
+      "description": "Subagent execution progress",
+      "properties": {
+        "type": {
+          "const": "agent_progress"
+        },
+        "agentId": {
+          "type": "string",
+          "description": "Subagent ID"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Task prompt (may be truncated)"
+        },
+        "normalizedMessages": {
+          "type": "array",
+          "description": "Accumulated subagent messages"
+        },
+        "message": {
+          "type": "object",
+          "description": "Full conversation message sent to subagent"
+        }
+      },
+      "required": [
+        "type",
+        "agentId",
+        "prompt"
+      ],
+      "additionalProperties": true
+    },
+    "WaitingForTaskData": {
+      "type": "object",
+      "description": "Waiting for a background task to complete",
+      "properties": {
+        "type": {
+          "const": "waiting_for_task"
+        },
+        "taskDescription": {
+          "type": "string"
+        },
+        "taskType": {
+          "type": "string",
+          "enum": [
+            "local_bash",
+            "local_agent"
+          ],
+          "description": "Background task type"
+        }
+      },
+      "required": [
+        "type",
+        "taskDescription",
+        "taskType"
+      ],
+      "additionalProperties": true
+    },
+    "QueryUpdateData": {
+      "type": "object",
+      "description": "WebSearch query submission progress",
+      "properties": {
+        "type": {
+          "const": "query_update"
+        },
+        "query": {
+          "type": "string",
+          "description": "Search query submitted"
+        }
+      },
+      "required": [
+        "type",
+        "query"
+      ],
+      "additionalProperties": true
+    },
+    "SearchResultsReceivedData": {
+      "type": "object",
+      "description": "WebSearch results received",
+      "properties": {
+        "type": {
+          "const": "search_results_received"
+        },
+        "resultCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "resultCount",
+        "query"
+      ],
+      "additionalProperties": true
+    },
+    "ProgressData": {
+      "description": "Progress event data \u2014 discriminated by data.type",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/MCPProgressData"
+        },
+        {
+          "$ref": "#/$defs/BashProgressData"
+        },
+        {
+          "$ref": "#/$defs/HookProgressData"
+        },
+        {
+          "$ref": "#/$defs/AgentProgressData"
+        },
+        {
+          "$ref": "#/$defs/WaitingForTaskData"
+        },
+        {
+          "$ref": "#/$defs/QueryUpdateData"
+        },
+        {
+          "$ref": "#/$defs/SearchResultsReceivedData"
+        }
+      ]
+    },
+    "ProgressMessage": {
+      "type": "object",
+      "description": "Streaming progress event. New in v2.1.x. Accounts for ~44% of all JSONL lines. Subtypes: mcp_progress, bash_progress, hook_progress, agent_progress, waiting_for_task, query_update, search_results_received.",
+      "properties": {
+        "type": {
+          "const": "progress"
+        },
+        "uuid": {
+          "$ref": "#/$defs/UUID"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        },
+        "parentUuid": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/UUID"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timestamp": {
+          "$ref": "#/$defs/ISO8601Timestamp"
+        },
+        "version": {
+          "$ref": "#/$defs/CLIVersion"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "gitBranch": {
+          "type": "string"
+        },
+        "isSidechain": {
+          "type": "boolean"
+        },
+        "userType": {
+          "type": "string",
+          "const": "external"
+        },
+        "slug": {
+          "type": "string",
+          "description": "Human-readable session name (may be absent)"
+        },
+        "agentId": {
+          "type": "string",
+          "description": "Agent ID (in subagent session files)"
+        },
+        "toolUseID": {
+          "type": "string",
+          "description": "Associated tool use ID"
+        },
+        "parentToolUseID": {
+          "type": "string",
+          "description": "Parent tool use ID (for nested tool calls)"
+        },
+        "data": {
+          "$ref": "#/$defs/ProgressData"
+        }
+      },
+      "required": [
+        "type",
+        "uuid",
+        "sessionId",
+        "parentUuid",
+        "timestamp",
+        "version",
+        "cwd",
+        "isSidechain",
+        "userType",
+        "data"
+      ],
+      "additionalProperties": true
+    },
+    "PRLinkMessage": {
+      "type": "object",
+      "description": "Lightweight PR link record. Emitted once when Claude creates or references a pull request. New in v2.1.x.",
+      "properties": {
+        "type": {
+          "const": "pr-link"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        },
+        "prNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Pull request number"
+        },
+        "prUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "Full PR URL"
+        },
+        "prRepository": {
+          "type": "string",
+          "description": "Repository identifier (e.g., 'owner/repo')"
+        },
+        "timestamp": {
+          "$ref": "#/$defs/ISO8601Timestamp"
+        }
+      },
+      "required": [
+        "type",
+        "sessionId",
+        "prNumber",
+        "prUrl",
+        "prRepository",
+        "timestamp"
+      ],
+      "additionalProperties": true
+    },
+    "AgentNameMessage": {
+      "type": "object",
+      "description": "Agent name assignment message. Sets the display name for a session/agent. Added in v2.1.68+.",
+      "properties": {
+        "type": {
+          "const": "agent-name"
+        },
+        "agentName": {
+          "type": "string",
+          "description": "Display name for the agent/session"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        }
+      },
+      "required": [
+        "type",
+        "agentName",
+        "sessionId"
+      ],
+      "additionalProperties": true
+    },
+    "CustomTitleMessage": {
+      "type": "object",
+      "description": "Custom title message. Sets or updates the session title. Added in v2.1.68+.",
+      "properties": {
+        "type": {
+          "const": "custom-title"
+        },
+        "customTitle": {
+          "type": "string",
+          "description": "Custom session title"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        }
+      },
+      "required": [
+        "type",
+        "customTitle",
+        "sessionId"
+      ],
+      "additionalProperties": true
+    },
+    "LastPromptMessage": {
+      "type": "object",
+      "description": "Last prompt message. Records the most recent user prompt for session resumption. Added in v2.1.68+.",
+      "properties": {
+        "type": {
+          "const": "last-prompt"
+        },
+        "lastPrompt": {
+          "type": "string",
+          "description": "Last user prompt text"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        },
+        "leafUuid": {
+          "$ref": "#/$defs/UUID",
+          "description": "UUID of the leaf message that produced this last-prompt snapshot."
+        }
+      },
+      "required": [
+        "type",
+        "lastPrompt",
+        "sessionId"
+      ],
+      "additionalProperties": true
+    },
+    "CronCreateInput": {
+      "type": "object",
+      "description": "Create a recurring cron job.",
+      "properties": {
+        "cron": {
+          "description": "Standard 5-field cron expression in local time: \"M H DoM Mon DoW\" (e.g. \"*/5 * * * *\" = every 5 minutes).",
+          "type": "string"
+        },
+        "prompt": {
+          "description": "The prompt to enqueue at each fire time.",
+          "type": "string"
+        },
+        "recurring": {
+          "description": "true (default) = fire on every cron match until deleted or auto-expired after 7 days. false = fire once at the next match, then auto-delete.",
+          "type": "boolean"
+        },
+        "durable": {
+          "type": "boolean",
+          "description": "true = persist to .claude/scheduled_tasks.json and survive restarts. false (default) = in-memory only."
+        }
+      },
+      "required": [
+        "cron",
+        "prompt"
+      ],
+      "additionalProperties": false
+    },
+    "CronDeleteInput": {
+      "type": "object",
+      "description": "Delete a cron job.",
+      "properties": {
+        "id": {
+          "description": "Job ID returned by CronCreate.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "CronListInput": {
+      "type": "object",
+      "description": "List active cron jobs",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ExitWorktreeInput": {
+      "type": "object",
+      "description": "Exit a git worktree isolation context.",
+      "properties": {
+        "action": {
+          "description": "\"keep\" leaves the worktree and branch on disk; \"remove\" deletes both.",
+          "type": "string",
+          "enum": [
+            "keep",
+            "remove"
+          ]
+        },
+        "discard_changes": {
+          "description": "Required true when action is \"remove\" and the worktree has uncommitted files or unmerged commits. The tool will refuse and list them otherwise.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "MonitorInput": {
+      "type": "object",
+      "description": "Start a background monitor that streams events from a long-running script.",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Human-readable description shown in notifications."
+        },
+        "timeout_ms": {
+          "type": "number",
+          "default": 300000,
+          "minimum": 1000,
+          "description": "Kill the monitor after this deadline. Default 300000ms, max 3600000ms."
+        },
+        "persistent": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run for the lifetime of the session (no timeout)."
+        },
+        "command": {
+          "type": "string",
+          "description": "Shell command or script. Each stdout line is an event."
+        }
+      },
+      "required": [
+        "description",
+        "timeout_ms",
+        "persistent",
+        "command"
+      ],
+      "additionalProperties": false
+    },
+    "PushNotificationInput": {
+      "type": "object",
+      "description": "Send a desktop notification in the user's terminal.",
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Notification body. Keep under 200 characters."
+        },
+        "status": {
+          "type": "string",
+          "const": "proactive"
+        }
+      },
+      "required": [
+        "message",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "ScheduleWakeupInput": {
+      "type": "object",
+      "description": "Schedule when to resume work in /loop dynamic mode.",
+      "properties": {
+        "delaySeconds": {
+          "type": "number",
+          "description": "Seconds from now to wake up. Clamped to [60, 3600]."
+        },
+        "reason": {
+          "type": "string",
+          "description": "One short sentence explaining the chosen delay."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "The /loop input to fire on wake-up."
+        }
+      },
+      "required": [
+        "delaySeconds",
+        "reason",
+        "prompt"
+      ],
+      "additionalProperties": false
+    },
+    "ShareOnboardingGuideInput": {
+      "type": "object",
+      "description": "Upload the ONBOARDING.md and return a share link.",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "default": "check",
+          "enum": [
+            "check",
+            "update",
+            "create",
+            "delete"
+          ]
+        },
+        "short_code": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "additionalProperties": false
+    },
+    "WaitForMcpServersInput": {
+      "type": "object",
+      "description": "Wait for MCP servers that are still connecting.",
+      "properties": {
+        "servers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Server names to wait for (default: all pending)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ServerToolUseBlock": {
+      "type": "object",
+      "description": "Server-side tool invocation block (e.g. advisor). Added in v2.1.x+ as Claude Code began surfacing server-managed tools alongside client tool_use blocks.",
+      "properties": {
+        "type": {
+          "const": "server_tool_use"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^srvtoolu_[a-zA-Z0-9]+$",
+          "description": "Server tool use ID"
+        },
+        "name": {
+          "type": "string",
+          "description": "Server tool name (e.g. 'advisor')"
+        },
+        "input": {
+          "type": "object",
+          "description": "Server tool input"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "name",
+        "input"
+      ],
+      "additionalProperties": true
+    },
+    "AdvisorToolResultBlock": {
+      "type": "object",
+      "description": "Result block returned for a server_tool_use call to the advisor tool. Pairs with a ServerToolUseBlock.",
+      "properties": {
+        "type": {
+          "const": "advisor_tool_result"
+        },
+        "tool_use_id": {
+          "type": "string",
+          "description": "ID of the originating server_tool_use block"
+        },
+        "content": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ToolResultContentItem"
+              }
+            },
+            {
+              "type": "object",
+              "description": "Structured advisor payload, e.g. {type: 'advisor_result', text: '...'}.",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "description": "Inner content type (e.g. 'advisor_result')."
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "OriginInfo": {
+      "type": "object",
+      "description": "Origin info for messages synthesised by Claude Code (e.g. background task notifications, channel-relayed prompts).",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "Origin kind. Known values: 'task-notification', 'channel'."
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": true
+    },
+    "PermissionModeMessage": {
+      "type": "object",
+      "description": "Permission-mode change record. Emitted when the user toggles permission mode (Shift+Tab cycle). Added in v2.1.97+.",
+      "properties": {
+        "type": {
+          "const": "permission-mode"
+        },
+        "permissionMode": {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "bypassPermissions",
+            "dontAsk",
+            "plan",
+            "auto"
+          ]
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        }
+      },
+      "required": [
+        "type",
+        "permissionMode",
+        "sessionId"
+      ],
+      "additionalProperties": true
+    },
+    "AITitleMessage": {
+      "type": "object",
+      "description": "AI-generated session title. Added in v2.1.97+.",
+      "properties": {
+        "type": {
+          "const": "ai-title"
+        },
+        "aiTitle": {
+          "type": "string",
+          "description": "AI-generated title for the session."
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        }
+      },
+      "required": [
+        "type",
+        "aiTitle",
+        "sessionId"
+      ],
+      "additionalProperties": true
+    },
+    "AgentSettingMessage": {
+      "type": "object",
+      "description": "Active agent setting for the session (e.g. 'claude'). Added in v2.1.97+.",
+      "properties": {
+        "type": {
+          "const": "agent-setting"
+        },
+        "agentSetting": {
+          "type": "string",
+          "description": "Agent setting identifier."
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        }
+      },
+      "required": [
+        "type",
+        "agentSetting",
+        "sessionId"
+      ],
+      "additionalProperties": true
+    },
+    "BridgeSessionMessage": {
+      "type": "object",
+      "description": "Bridge-session linkage record. Identifies a remote control / claude.ai bridge session that mirrors this local session. Added in v2.1.97+.",
+      "properties": {
+        "type": {
+          "const": "bridge-session"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        },
+        "bridgeSessionId": {
+          "type": "string",
+          "description": "Remote bridge session ID (e.g. cse_*)."
+        },
+        "lastSequenceNum": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Last sequence number synced to the bridge."
+        }
+      },
+      "required": [
+        "type",
+        "sessionId",
+        "bridgeSessionId"
+      ],
+      "additionalProperties": true
+    },
+    "WorktreeStateMessage": {
+      "type": "object",
+      "description": "Worktree session state record. Captures the original cwd/branch and isolated worktree path for `--worktree` / EnterWorktree sessions. Added in v2.1.97+.",
+      "properties": {
+        "type": {
+          "const": "worktree-state"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        },
+        "worktreeSession": {
+          "type": "object",
+          "properties": {
+            "originalCwd": {
+              "type": "string"
+            },
+            "worktreePath": {
+              "type": "string"
+            },
+            "worktreeName": {
+              "type": "string"
+            },
+            "worktreeBranch": {
+              "type": "string"
+            },
+            "originalBranch": {
+              "type": "string"
+            },
+            "originalHeadCommit": {
+              "type": "string"
+            },
+            "sessionId": {
+              "$ref": "#/$defs/UUID"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "type",
+        "sessionId",
+        "worktreeSession"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentOutputStyle": {
+      "type": "object",
+      "description": "Output-style change record.",
+      "properties": {
+        "type": {
+          "const": "output_style"
+        },
+        "style": {
+          "type": "string",
+          "description": "Output style name (e.g. 'Explanatory')."
+        },
+        "turnReminder": {
+          "type": "boolean",
+          "description": "Whether this output-style record is a per-turn reminder rather than a one-shot style change."
+        }
+      },
+      "required": [
+        "type",
+        "style"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentHookSuccess": {
+      "type": "object",
+      "description": "Successful hook invocation result.",
+      "properties": {
+        "type": {
+          "const": "hook_success"
+        },
+        "hookName": {
+          "type": "string"
+        },
+        "toolUseID": {
+          "type": "string"
+        },
+        "hookEvent": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "exitCode": {
+          "type": "integer"
+        },
+        "command": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "type",
+        "hookName",
+        "hookEvent"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentHookNonBlockingError": {
+      "type": "object",
+      "description": "Hook failed with a non-blocking status (the turn continues).",
+      "properties": {
+        "type": {
+          "const": "hook_non_blocking_error"
+        },
+        "hookName": {
+          "type": "string"
+        },
+        "toolUseID": {
+          "type": "string"
+        },
+        "hookEvent": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "exitCode": {
+          "type": "integer"
+        },
+        "command": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "type",
+        "hookName",
+        "hookEvent"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentHookBlockingError": {
+      "type": "object",
+      "description": "Hook returned a blocking error (turn halted with feedback to Claude).",
+      "properties": {
+        "type": {
+          "const": "hook_blocking_error"
+        },
+        "hookName": {
+          "type": "string"
+        },
+        "toolUseID": {
+          "type": "string"
+        },
+        "hookEvent": {
+          "type": "string"
+        },
+        "blockingError": {
+          "type": "object",
+          "properties": {
+            "blockingError": {
+              "type": "string"
+            },
+            "command": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "type",
+        "hookName",
+        "hookEvent"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentHookCancelled": {
+      "type": "object",
+      "description": "Hook execution cancelled (timeout or user interrupt).",
+      "properties": {
+        "type": {
+          "const": "hook_cancelled"
+        },
+        "hookName": {
+          "type": "string"
+        },
+        "toolUseID": {
+          "type": "string"
+        },
+        "hookEvent": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "type",
+        "hookName",
+        "hookEvent"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentTaskReminder": {
+      "type": "object",
+      "description": "Reminder of the current task list state (TaskCreate/Update).",
+      "properties": {
+        "type": {
+          "const": "task_reminder"
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "itemCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentTodoReminder": {
+      "type": "object",
+      "description": "Reminder of the current TodoWrite list state.",
+      "properties": {
+        "type": {
+          "const": "todo_reminder"
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "itemCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentQueuedCommand": {
+      "type": "object",
+      "description": "User prompt queued while Claude was responding.",
+      "properties": {
+        "type": {
+          "const": "queued_command"
+        },
+        "prompt": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ContentBlock"
+              },
+              "description": "Multi-part queued prompt (e.g. text + pasted image)."
+            }
+          ]
+        },
+        "commandMode": {
+          "type": "string",
+          "description": "How the queued prompt should be delivered (e.g. 'prompt')."
+        },
+        "source_uuid": {
+          "$ref": "#/$defs/UUID",
+          "description": "UUID of the message that queued this command."
+        },
+        "imagePasteIds": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "description": "IDs of images pasted alongside the queued prompt."
+        },
+        "fileAttachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "description": "File attachments queued with the prompt."
+        },
+        "origin": {
+          "$ref": "#/$defs/OriginInfo"
+        },
+        "isMeta": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "prompt"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentDeferredToolsDelta": {
+      "type": "object",
+      "description": "Delta to the deferred-tools list (Tool Search). Surfaces which tool schemas are currently fetchable via ToolSearch.",
+      "properties": {
+        "type": {
+          "const": "deferred_tools_delta"
+        },
+        "addedNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "addedLines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "removedNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "readdedNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pendingMcpServers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentMcpInstructionsDelta": {
+      "type": "object",
+      "description": "Delta to MCP server instruction blocks injected into the system prompt.",
+      "properties": {
+        "type": {
+          "const": "mcp_instructions_delta"
+        },
+        "addedNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "addedBlocks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "removedNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentSkillListing": {
+      "type": "object",
+      "description": "Listing of skills available to invoke via the Skill tool.",
+      "properties": {
+        "type": {
+          "const": "skill_listing"
+        },
+        "content": {
+          "type": "string"
+        },
+        "skillCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "isInitial": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentInvokedSkills": {
+      "type": "object",
+      "description": "Skills invoked in this turn (full content included).",
+      "properties": {
+        "type": {
+          "const": "invoked_skills"
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "type",
+        "skills"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentEditedTextFile": {
+      "type": "object",
+      "description": "Snippet of a file the user edited externally; injected back into context.",
+      "properties": {
+        "type": {
+          "const": "edited_text_file"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "snippet": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "filename"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentAutoMode": {
+      "type": "object",
+      "description": "Auto-mode reminder injected into context.",
+      "properties": {
+        "type": {
+          "const": "auto_mode"
+        },
+        "reminderType": {
+          "type": "string",
+          "description": "Reminder kind (e.g. 'once')."
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentAutoModeExit": {
+      "type": "object",
+      "description": "Auto-mode exit marker.",
+      "properties": {
+        "type": {
+          "const": "auto_mode_exit"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentPlanModeExit": {
+      "type": "object",
+      "description": "Plan-mode exit marker. Records the path to the saved plan file.",
+      "properties": {
+        "type": {
+          "const": "plan_mode_exit"
+        },
+        "planFilePath": {
+          "type": "string"
+        },
+        "planExists": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentNestedMemory": {
+      "type": "object",
+      "description": "Nested CLAUDE.md memory file loaded from a subdirectory.",
+      "properties": {
+        "type": {
+          "const": "nested_memory"
+        },
+        "path": {
+          "type": "string"
+        },
+        "content": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "description": "Memory scope (e.g. 'Project', 'User')."
+            },
+            "content": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        },
+        "displayPath": {
+          "type": "string",
+          "description": "Display path (e.g. relative to cwd)."
+        }
+      },
+      "required": [
+        "type",
+        "path"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentCommandPermissions": {
+      "type": "object",
+      "description": "Tool allowlist enforced for an invoked slash command.",
+      "properties": {
+        "type": {
+          "const": "command_permissions"
+        },
+        "allowedTools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "type",
+        "allowedTools"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentFile": {
+      "type": "object",
+      "description": "Full-file attachment (@-mention or auto-injected).",
+      "properties": {
+        "type": {
+          "const": "file"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "content": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "Content kind (e.g. 'text')."
+            },
+            "file": {
+              "type": "object",
+              "properties": {
+                "filePath": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "displayPath": {
+          "type": "string",
+          "description": "Display path (e.g. relative to cwd)."
+        }
+      },
+      "required": [
+        "type",
+        "filename"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentCompactFileReference": {
+      "type": "object",
+      "description": "Compact-mode reference to a file that was previously loaded but is now elided.",
+      "properties": {
+        "type": {
+          "const": "compact_file_reference"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "displayPath": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "filename"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentDirectory": {
+      "type": "object",
+      "description": "Directory listing attachment.",
+      "properties": {
+        "type": {
+          "const": "directory"
+        },
+        "path": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string",
+          "description": "Newline-separated listing."
+        },
+        "displayPath": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "path"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentDateChange": {
+      "type": "object",
+      "description": "Calendar date rollover marker.",
+      "properties": {
+        "type": {
+          "const": "date_change"
+        },
+        "newDate": {
+          "type": "string",
+          "description": "New date (YYYY-MM-DD)."
+        }
+      },
+      "required": [
+        "type",
+        "newDate"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentGoalStatus": {
+      "type": "object",
+      "description": "Goal-mode status check (/goal). Emitted when Claude probes whether the user's stated goal is met.",
+      "properties": {
+        "type": {
+          "const": "goal_status"
+        },
+        "met": {
+          "type": "boolean"
+        },
+        "sentinel": {
+          "type": "boolean"
+        },
+        "condition": {
+          "type": "string",
+          "description": "User-supplied goal/completion condition."
+        },
+        "failed": {
+          "type": "boolean",
+          "description": "Whether goal probing concluded the goal cannot be met."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Free-text explanation of the met/failed determination."
+        },
+        "iterations": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many goal-probe iterations have run."
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cumulative time spent probing this goal."
+        },
+        "tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Tokens consumed by goal-probe iterations."
+        }
+      },
+      "required": [
+        "type",
+        "met"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentBudgetUsd": {
+      "type": "object",
+      "description": "USD budget snapshot.",
+      "properties": {
+        "type": {
+          "const": "budget_usd"
+        },
+        "used": {
+          "type": "number",
+          "minimum": 0
+        },
+        "total": {
+          "type": "number",
+          "minimum": 0
+        },
+        "remaining": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentMaxTurnsReached": {
+      "type": "object",
+      "description": "Subagent hit its turn cap.",
+      "properties": {
+        "type": {
+          "const": "max_turns_reached"
+        },
+        "maxTurns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "turnCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentMessage": {
+      "type": "object",
+      "description": "Attachment message. A user-side context-injection record that does not contribute to the LLM conversation directly but records out-of-band state (hook results, queued commands, output-style changes, file/dir attachments, etc.). Added in v2.1.97+.",
+      "properties": {
+        "type": {
+          "const": "attachment"
+        },
+        "uuid": {
+          "$ref": "#/$defs/UUID"
+        },
+        "parentUuid": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/UUID"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        },
+        "timestamp": {
+          "$ref": "#/$defs/ISO8601Timestamp"
+        },
+        "version": {
+          "$ref": "#/$defs/CLIVersion"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "gitBranch": {
+          "type": "string"
+        },
+        "isSidechain": {
+          "type": "boolean"
+        },
+        "userType": {
+          "type": "string",
+          "const": "external"
+        },
+        "entrypoint": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "attachment": {
+          "description": "The attached payload. Discriminated by 'attachment.type'.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AttachmentOutputStyle"
+            },
+            {
+              "$ref": "#/$defs/AttachmentHookSuccess"
+            },
+            {
+              "$ref": "#/$defs/AttachmentHookNonBlockingError"
+            },
+            {
+              "$ref": "#/$defs/AttachmentHookBlockingError"
+            },
+            {
+              "$ref": "#/$defs/AttachmentHookCancelled"
+            },
+            {
+              "$ref": "#/$defs/AttachmentTaskReminder"
+            },
+            {
+              "$ref": "#/$defs/AttachmentTodoReminder"
+            },
+            {
+              "$ref": "#/$defs/AttachmentQueuedCommand"
+            },
+            {
+              "$ref": "#/$defs/AttachmentDeferredToolsDelta"
+            },
+            {
+              "$ref": "#/$defs/AttachmentMcpInstructionsDelta"
+            },
+            {
+              "$ref": "#/$defs/AttachmentSkillListing"
+            },
+            {
+              "$ref": "#/$defs/AttachmentInvokedSkills"
+            },
+            {
+              "$ref": "#/$defs/AttachmentEditedTextFile"
+            },
+            {
+              "$ref": "#/$defs/AttachmentAutoMode"
+            },
+            {
+              "$ref": "#/$defs/AttachmentAutoModeExit"
+            },
+            {
+              "$ref": "#/$defs/AttachmentPlanModeExit"
+            },
+            {
+              "$ref": "#/$defs/AttachmentNestedMemory"
+            },
+            {
+              "$ref": "#/$defs/AttachmentCommandPermissions"
+            },
+            {
+              "$ref": "#/$defs/AttachmentFile"
+            },
+            {
+              "$ref": "#/$defs/AttachmentCompactFileReference"
+            },
+            {
+              "$ref": "#/$defs/AttachmentDirectory"
+            },
+            {
+              "$ref": "#/$defs/AttachmentDateChange"
+            },
+            {
+              "$ref": "#/$defs/AttachmentGoalStatus"
+            },
+            {
+              "$ref": "#/$defs/AttachmentBudgetUsd"
+            },
+            {
+              "$ref": "#/$defs/AttachmentMaxTurnsReached"
+            },
+            {
+              "$ref": "#/$defs/AttachmentAgentMention"
+            },
+            {
+              "$ref": "#/$defs/AttachmentHookAdditionalContext"
+            },
+            {
+              "$ref": "#/$defs/AttachmentHookDeferredTool"
+            },
+            {
+              "$ref": "#/$defs/AttachmentHookErrorDuringExecution"
+            },
+            {
+              "$ref": "#/$defs/AttachmentHookPermissionDecision"
+            },
+            {
+              "$ref": "#/$defs/AttachmentHookStoppedContinuation"
+            },
+            {
+              "$ref": "#/$defs/AttachmentHookSystemMessage"
+            },
+            {
+              "$ref": "#/$defs/AttachmentPlanFileReference"
+            },
+            {
+              "$ref": "#/$defs/AttachmentPlanMode"
+            },
+            {
+              "$ref": "#/$defs/AttachmentPlanModeReentry"
+            },
+            {
+              "$ref": "#/$defs/AttachmentRelevantMemories"
+            },
+            {
+              "$ref": "#/$defs/AttachmentStructuredOutput"
+            },
+            {
+              "$ref": "#/$defs/AttachmentTaskStatus"
+            }
+          ]
+        },
+        "sessionKind": {
+          "type": "string",
+          "description": "Session kind (e.g. 'background', 'subagent')."
+        }
+      },
+      "required": [
+        "type",
+        "uuid",
+        "parentUuid",
+        "sessionId",
+        "timestamp",
+        "version",
+        "cwd",
+        "isSidechain",
+        "userType",
+        "attachment"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentAgentMention": {
+      "type": "object",
+      "description": "@-mention of an agent name in user input. Binary-canonical (mined from CLI 2.1.144); not observed in 660-file corpus.",
+      "properties": {
+        "type": {
+          "const": "agent_mention"
+        },
+        "agentType": {
+          "type": "string",
+          "description": "Name/type of the mentioned agent."
+        }
+      },
+      "required": [
+        "type",
+        "agentType"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentHookAdditionalContext": {
+      "type": "object",
+      "description": "Extra context appended by a hook (SessionStart/Setup/SubagentStart/UserPromptExpansion/PostToolUse etc.). Hook returns context that becomes part of the next LLM turn. Binary-canonical.",
+      "properties": {
+        "type": {
+          "const": "hook_additional_context"
+        },
+        "hookName": {
+          "type": "string"
+        },
+        "toolUseID": {
+          "type": "string"
+        },
+        "hookEvent": {
+          "type": "string",
+          "description": "Lifecycle event the hook fired on (e.g. 'SessionStart', 'PostToolUse')."
+        },
+        "content": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of additional context strings."
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "hookName",
+        "hookEvent"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentHookDeferredTool": {
+      "type": "object",
+      "description": "PreToolUse hook deferred the tool call (rather than allowing or blocking). The original tool invocation is preserved for re-execution. Binary-canonical.",
+      "properties": {
+        "type": {
+          "const": "hook_deferred_tool"
+        },
+        "toolUseID": {
+          "type": "string"
+        },
+        "toolName": {
+          "type": "string",
+          "description": "Name of the tool whose invocation was deferred."
+        },
+        "toolInput": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Original tool input arguments."
+        },
+        "hookName": {
+          "type": "string"
+        },
+        "hookEvent": {
+          "type": "string"
+        },
+        "permissionMode": {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "bypassPermissions",
+            "dontAsk",
+            "plan",
+            "auto"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "toolUseID",
+        "toolName",
+        "hookName",
+        "hookEvent"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentHookErrorDuringExecution": {
+      "type": "object",
+      "description": "Hook threw or exited non-zero during its own execution (distinct from blocking/non-blocking errors, which are returns from a hook that ran successfully). Binary-canonical.",
+      "properties": {
+        "type": {
+          "const": "hook_error_during_execution"
+        },
+        "hookName": {
+          "type": "string"
+        },
+        "toolUseID": {
+          "type": "string"
+        },
+        "hookEvent": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string",
+          "description": "Error message or stderr capture."
+        },
+        "command": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "type",
+        "hookName",
+        "hookEvent"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentHookPermissionDecision": {
+      "type": "object",
+      "description": "Permission-prompt hook decided allow/deny for a tool call. Binary-canonical.",
+      "properties": {
+        "type": {
+          "const": "hook_permission_decision"
+        },
+        "decision": {
+          "type": "string",
+          "description": "Permission decision returned by the hook (e.g. 'allow', 'deny')."
+        },
+        "toolUseID": {
+          "type": "string"
+        },
+        "hookEvent": {
+          "type": "string",
+          "description": "Typically 'PermissionRequest'."
+        }
+      },
+      "required": [
+        "type",
+        "decision",
+        "toolUseID",
+        "hookEvent"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentHookStoppedContinuation": {
+      "type": "object",
+      "description": "PostToolUse hook signalled that the turn should not continue (e.g. stop reason). Binary-canonical.",
+      "properties": {
+        "type": {
+          "const": "hook_stopped_continuation"
+        },
+        "message": {
+          "type": "string",
+          "description": "Stop reason text fed back to the model."
+        },
+        "hookName": {
+          "type": "string"
+        },
+        "toolUseID": {
+          "type": "string"
+        },
+        "hookEvent": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "hookName",
+        "hookEvent"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentHookSystemMessage": {
+      "type": "object",
+      "description": "Hook emitted a synthetic system-message-style payload. Binary-canonical.",
+      "properties": {
+        "type": {
+          "const": "hook_system_message"
+        },
+        "content": {
+          "type": "string"
+        },
+        "hookName": {
+          "type": "string"
+        },
+        "toolUseID": {
+          "type": "string"
+        },
+        "hookEvent": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "hookName",
+        "hookEvent"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentPlanFileReference": {
+      "type": "object",
+      "description": "Reference to an externalised plan file (used when the plan content is too large to inline). Binary-canonical.",
+      "properties": {
+        "type": {
+          "const": "plan_file_reference"
+        },
+        "planFilePath": {
+          "type": "string"
+        },
+        "planContent": {
+          "type": "string",
+          "description": "Plan content (markdown). May be omitted if the file is referenced rather than inlined."
+        }
+      },
+      "required": [
+        "type",
+        "planFilePath"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentPlanMode": {
+      "type": "object",
+      "description": "Plan-mode entry / reminder marker. Distinct from plan_mode_exit. Binary-canonical.",
+      "properties": {
+        "type": {
+          "const": "plan_mode"
+        },
+        "reminderType": {
+          "type": "string",
+          "description": "Reminder kind (e.g. 'once', 'every-turn')."
+        },
+        "isSubAgent": {
+          "type": "boolean",
+          "description": "Whether plan mode is active in a subagent context."
+        },
+        "planFilePath": {
+          "type": "string"
+        },
+        "planExists": {
+          "type": "boolean"
+        },
+        "customInstructions": {
+          "type": "string",
+          "description": "User-provided custom plan-mode instructions."
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentPlanModeReentry": {
+      "type": "object",
+      "description": "Re-entry into plan mode after a prior exit (e.g. /plan again on an existing plan file). Binary-canonical.",
+      "properties": {
+        "type": {
+          "const": "plan_mode_reentry"
+        },
+        "planFilePath": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentRelevantMemories": {
+      "type": "object",
+      "description": "Retrieved memory entries relevant to the current turn. Binary-canonical.",
+      "properties": {
+        "type": {
+          "const": "relevant_memories"
+        },
+        "memories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "description": "Memory entries surfaced by retrieval."
+        }
+      },
+      "required": [
+        "type",
+        "memories"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentStructuredOutput": {
+      "type": "object",
+      "description": "Structured output payload from a tool or skill (e.g. JSON-typed result returned alongside the conversation). Binary-canonical.",
+      "properties": {
+        "type": {
+          "const": "structured_output"
+        },
+        "data": {
+          "description": "Structured payload. Shape depends on the producing tool/skill."
+        }
+      },
+      "required": [
+        "type",
+        "data"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentTaskStatus": {
+      "type": "object",
+      "description": "Background-task lifecycle update. Surfaces task creation/update/completion in the transcript. Binary-canonical.",
+      "properties": {
+        "type": {
+          "const": "task_status"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "taskType": {
+          "type": "string",
+          "description": "Task kind (e.g. 'bash', 'agent', 'monitor')."
+        },
+        "status": {
+          "type": "string",
+          "description": "Lifecycle status (e.g. 'started', 'running', 'completed', 'failed')."
+        },
+        "description": {
+          "type": "string"
+        },
+        "deltaSummary": {
+          "type": "string",
+          "description": "Delta summary since last status update."
+        },
+        "outputFilePath": {
+          "type": "string",
+          "description": "Path to the captured output file for the task."
+        }
+      },
+      "required": [
+        "type",
+        "taskId"
+      ],
+      "additionalProperties": true
+    },
+    "PowerShellInput": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "The PowerShell command to execute",
+          "type": "string"
+        },
+        "timeout": {
+          "type": "number"
+        },
+        "description": {
+          "description": "Clear, concise description of what this command does in active voice.",
+          "type": "string"
+        },
+        "run_in_background": {
+          "description": "Set to true to run this command in the background.",
+          "type": "boolean"
+        },
+        "dangerouslyDisableSandbox": {
+          "description": "Set this to true to dangerously override sandbox mode and run commands without sandboxing.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "additionalProperties": false,
+      "description": "Execute Windows PowerShell commands. Conditionally enabled \u2014 only loaded when running on Windows or when CLAUDE_CODE_USE_POWERSHELL_TOOL=1."
+    },
+    "RemoteTriggerInput": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "run"
+          ]
+        },
+        "trigger_id": {
+          "description": "Required for get, update, and run",
+          "type": "string",
+          "pattern": "^[\\w-]+$"
+        },
+        "body": {
+          "description": "Required for create and update; optional for run",
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false,
+      "description": "Manage scheduled remote Claude Code agents (routines) via the claude.ai CCR API. Conditionally enabled \u2014 requires claude.ai bridge / OAuth / `tengu_surreal_dali` feature flag."
+    },
+    "SendUserFileInput": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "description": "File paths (absolute or relative to cwd) to send to the user.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "caption": {
+          "description": "Optional short caption for the file(s).",
+          "type": "string"
+        },
+        "status": {
+          "description": "Use 'proactive' when you're surfacing a file the user hasn't asked for and needs to see now \u2014 a generated artifact, a completed report. Use 'normal' when replying to something the user just said.",
+          "type": "string",
+          "enum": [
+            "normal",
+            "proactive"
+          ]
+        }
+      },
+      "required": [
+        "files",
+        "status"
+      ],
+      "additionalProperties": false,
+      "description": "Deliver files (screenshots, reports, artifacts) to the user. Conditionally enabled in remote-environment sessions only."
+    }
+  }
+}

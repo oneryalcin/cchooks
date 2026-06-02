@@ -21,6 +21,15 @@ if TYPE_CHECKING:
     from fasthooks.transcript.core import Transcript
 
 
+def _content_block_to_wire(block: BaseModel) -> dict[str, Any]:
+    """Serialize a content block to its JSONL wire dict.
+
+    Used to rebuild ``message.content`` so in-place block mutations persist on
+    save; the rest of the ``message`` is preserved verbatim from the raw record.
+    """
+    return block.model_dump(by_alias=True, exclude_none=True)
+
+
 class Entry(BaseModel):
     """Base for *any* JSONL stream record — messages and bookkeeping alike.
 
@@ -46,12 +55,18 @@ class Entry(BaseModel):
     def to_dict(self) -> dict[str, Any]:
         """Serialize entry to dict for JSONL output.
 
-        Uses camelCase aliases and excludes internal fields.
-        mode='json' ensures datetime is serialized to ISO8601 string.
+        Wire-faithful: ``exclude_unset`` emits only the fields that parsing (or a
+        factory) actually set, so a parsed-then-saved record matches the canonical
+        Claude Code JSONL rather than gaining a dozen defaulted-to-False/"" fields
+        (isMeta, isSynthetic, slug, ...) it never had. The ``type`` discriminator
+        is forced because factory-created entries leave it at its class default
+        (hence "unset"), yet every real record carries it.
+
+        Uses camelCase aliases. mode='json' serializes datetime to ISO8601.
         """
-        data = self.model_dump(by_alias=True, exclude_none=True, mode="json")
-        # Remove internal fields
+        data = self.model_dump(by_alias=True, exclude_unset=True, mode="json")
         data.pop("_line_number", None)
+        data["type"] = self.type
         return data
 
 
@@ -96,7 +111,7 @@ class UserMessage(MessageEntry):
         default=None, alias="thinkingMetadata"
     )
     todos: list[Any] = Field(default_factory=list)
-    tool_use_result: dict[str, Any] | str | None = Field(
+    tool_use_result: dict[str, Any] | str | list[Any] | None = Field(
         default=None, alias="toolUseResult"
     )
     is_meta: bool = Field(default=False, alias="isMeta")
@@ -189,30 +204,22 @@ class UserMessage(MessageEntry):
         return instance
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to dict, reconstructing message structure from parsed content."""
+        """Serialize, refreshing ``message.content`` from the parsed blocks.
+
+        The other ``message`` keys are preserved verbatim from the raw record
+        (the base dump keeps it as an extra), so nothing fasthooks doesn't model
+        is lost. ``content`` is rebuilt from ``_content`` so in-place block
+        mutations persist on save. A synthetic/factory entry (no raw ``message``)
+        gets a minimal one.
+        """
         data = super().to_dict()
-
-        # Reconstruct message.content from _content
+        raw_message = data.get("message")
+        message = dict(raw_message) if isinstance(raw_message, dict) else {"role": "user"}
         if isinstance(self._content, str):
-            message_content: str | list[dict[str, Any]] = self._content
+            message["content"] = self._content
         else:
-            # Serialize tool result blocks
-            message_content = []
-            for block in self._content:
-                block_data = block.model_dump(by_alias=True, exclude_none=True)
-                # Remove private fields
-                block_data.pop("_transcript", None)
-                block_data.pop("_tool_use_result", None)
-                message_content.append(block_data)
-
-        # Get existing message dict or create new one
-        message = data.get("message", {})
-        if not isinstance(message, dict):
-            message = {}
-        message["role"] = "user"
-        message["content"] = message_content
+            message["content"] = [_content_block_to_wire(b) for b in self._content]
         data["message"] = message
-
         return data
 
     @classmethod
@@ -382,33 +389,29 @@ class AssistantMessage(MessageEntry):
         return instance
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to dict, reconstructing message structure from parsed content."""
+        """Serialize, refreshing ``message.content`` from the parsed blocks.
+
+        For a parsed record the raw ``message`` is preserved (base-dump extra) and
+        only ``content`` is rebuilt — so fields fasthooks doesn't model
+        (stop_sequence, ...) survive, while in-place block mutations persist on
+        save. A synthetic/factory entry (no raw ``message``) builds one from the
+        parsed private fields.
+        """
         data = super().to_dict()
-
-        # Serialize content blocks
-        content_list = []
-        for block in self._content:
-            block_data = block.model_dump(by_alias=True, exclude_none=True)
-            # Remove private fields
-            block_data.pop("_transcript", None)
-            block_data.pop("_tool_use_result", None)
-            content_list.append(block_data)
-
-        # Reconstruct message object
-        message: dict[str, Any] = {
-            "type": "message",
-            "role": "assistant",
-            "content": content_list,
-        }
-        if self._message_id:
-            message["id"] = self._message_id
-        if self._model:
-            message["model"] = self._model
-        if self._stop_reason is not None:
-            message["stop_reason"] = self._stop_reason
-        if self._usage:
-            message["usage"] = self._usage
-
+        message = data.get("message")
+        if isinstance(message, dict):
+            message = dict(message)
+        else:
+            message = {"type": "message", "role": "assistant"}
+            if self._message_id:
+                message["id"] = self._message_id
+            if self._model:
+                message["model"] = self._model
+            if self._stop_reason is not None:
+                message["stop_reason"] = self._stop_reason
+            if self._usage:
+                message["usage"] = self._usage
+        message["content"] = [_content_block_to_wire(b) for b in self._content]
         data["message"] = message
         return data
 
