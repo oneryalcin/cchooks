@@ -1,0 +1,739 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/moru-ai/agent-schemas/claude-code/v2.0.76/session.schema.json",
+  "title": "Claude Code Session Schema (v2.0.76)",
+  "description": "Schema for Claude Code CLI session JSONL format. Each line in a .jsonl file should validate against this schema.",
+  "x-cli-version": "2.0.76",
+  "x-generated-date": "2026-01-08",
+
+  "oneOf": [
+    { "$ref": "#/$defs/UserMessage" },
+    { "$ref": "#/$defs/AssistantMessage" },
+    { "$ref": "#/$defs/SystemMessage" },
+    { "$ref": "#/$defs/SummaryMessage" },
+    { "$ref": "#/$defs/FileHistorySnapshot" },
+    { "$ref": "#/$defs/QueueOperation" }
+  ],
+
+  "$defs": {
+    "UUID": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "UUID v4 format"
+    },
+
+    "ISO8601Timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp"
+    },
+
+    "CLIVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "CLI version string (semver)",
+      "examples": ["2.0.62", "2.0.76", "2.1.1"]
+    },
+
+    "ModelId": {
+      "type": "string",
+      "description": "Claude model identifier",
+      "examples": [
+        "claude-opus-4-5-20251101",
+        "claude-sonnet-4-5-20250929",
+        "claude-haiku-4-5-20251001",
+        "<synthetic>"
+      ]
+    },
+
+    "BuiltInToolName": {
+      "type": "string",
+      "enum": [
+        "Bash",
+        "Read",
+        "Write",
+        "Edit",
+        "Glob",
+        "Grep",
+        "WebSearch",
+        "WebFetch",
+        "Task",
+        "TodoWrite",
+        "AskUserQuestion",
+        "NotebookEdit",
+        "EnterPlanMode",
+        "ExitPlanMode",
+        "Skill",
+        "KillShell",
+        "TaskOutput"
+      ],
+      "description": "Built-in tool name"
+    },
+
+    "MCPToolName": {
+      "type": "string",
+      "pattern": "^mcp__[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+$",
+      "description": "MCP tool name pattern: mcp__<server>__<tool>"
+    },
+
+    "ToolName": {
+      "oneOf": [
+        { "$ref": "#/$defs/BuiltInToolName" },
+        { "$ref": "#/$defs/MCPToolName" }
+      ],
+      "description": "Tool name (built-in or MCP)"
+    },
+
+    "BashInput": {
+      "type": "object",
+      "properties": {
+        "command": { "type": "string", "description": "The bash command to execute" },
+        "description": { "type": "string", "description": "Short description of command purpose" },
+        "timeout": { "type": "integer", "minimum": 0, "maximum": 600000, "description": "Timeout in milliseconds" },
+        "run_in_background": { "type": "boolean", "description": "Run command in background" },
+        "dangerouslyDisableSandbox": { "type": "boolean", "description": "Disable sandbox mode" }
+      },
+      "required": ["command"],
+      "additionalProperties": false
+    },
+
+    "ReadInput": {
+      "type": "object",
+      "properties": {
+        "file_path": { "type": "string", "description": "Absolute path to file" },
+        "offset": { "type": "integer", "minimum": 0, "description": "Line number to start reading from" },
+        "limit": { "type": "integer", "minimum": 1, "description": "Number of lines to read" }
+      },
+      "required": ["file_path"],
+      "additionalProperties": false
+    },
+
+    "WriteInput": {
+      "type": "object",
+      "properties": {
+        "file_path": { "type": "string", "description": "Absolute path to file" },
+        "content": { "type": "string", "description": "Content to write" }
+      },
+      "required": ["file_path", "content"],
+      "additionalProperties": false
+    },
+
+    "EditInput": {
+      "type": "object",
+      "properties": {
+        "file_path": { "type": "string", "description": "Absolute path to file" },
+        "old_string": { "type": "string", "description": "Text to replace" },
+        "new_string": { "type": "string", "description": "Replacement text" },
+        "replace_all": { "type": "boolean", "default": false, "description": "Replace all occurrences" }
+      },
+      "required": ["file_path", "old_string", "new_string"],
+      "additionalProperties": false
+    },
+
+    "GlobInput": {
+      "type": "object",
+      "properties": {
+        "pattern": { "type": "string", "description": "Glob pattern to match" },
+        "path": { "type": "string", "description": "Directory to search in" }
+      },
+      "required": ["pattern"],
+      "additionalProperties": false
+    },
+
+    "GrepInput": {
+      "type": "object",
+      "properties": {
+        "pattern": { "type": "string", "description": "Regex pattern to search" },
+        "path": { "type": "string", "description": "File or directory to search" },
+        "output_mode": { "type": "string", "enum": ["content", "files_with_matches", "count"] },
+        "glob": { "type": "string", "description": "Glob pattern to filter files" },
+        "type": { "type": "string", "description": "File type to search (e.g., js, py)" },
+        "head_limit": { "type": "integer", "minimum": 0, "description": "Limit output lines" },
+        "offset": { "type": "integer", "minimum": 0, "description": "Skip first N lines" },
+        "multiline": { "type": "boolean", "description": "Enable multiline mode" },
+        "-A": { "type": "integer", "minimum": 0, "description": "Lines after match" },
+        "-B": { "type": "integer", "minimum": 0, "description": "Lines before match" },
+        "-C": { "type": "integer", "minimum": 0, "description": "Lines of context" },
+        "-i": { "type": "boolean", "description": "Case insensitive" },
+        "-n": { "type": "boolean", "description": "Show line numbers" }
+      },
+      "required": ["pattern"],
+      "additionalProperties": false
+    },
+
+    "WebSearchInput": {
+      "type": "object",
+      "properties": {
+        "query": { "type": "string", "minLength": 2, "description": "Search query" },
+        "allowed_domains": { "type": "array", "items": { "type": "string" }, "description": "Domains to include" },
+        "blocked_domains": { "type": "array", "items": { "type": "string" }, "description": "Domains to exclude" }
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    },
+
+    "WebFetchInput": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string", "format": "uri", "description": "URL to fetch" },
+        "prompt": { "type": "string", "description": "Prompt for processing content" }
+      },
+      "required": ["url", "prompt"],
+      "additionalProperties": false
+    },
+
+    "TaskInput": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string", "description": "Short task description (3-5 words)" },
+        "prompt": { "type": "string", "description": "Task prompt for agent" },
+        "subagent_type": { "type": "string", "description": "Type of agent to use" },
+        "run_in_background": { "type": "boolean", "description": "Run agent in background" },
+        "model": { "type": "string", "enum": ["sonnet", "opus", "haiku"], "description": "Model to use" },
+        "resume": { "type": "string", "description": "Agent ID to resume" }
+      },
+      "required": ["description", "prompt", "subagent_type"],
+      "additionalProperties": false
+    },
+
+    "TodoItem": {
+      "type": "object",
+      "properties": {
+        "content": { "type": "string", "minLength": 1, "description": "Task description (imperative form)" },
+        "status": { "type": "string", "enum": ["pending", "in_progress", "completed"] },
+        "activeForm": { "type": "string", "minLength": 1, "description": "Present continuous form" }
+      },
+      "required": ["content", "status", "activeForm"],
+      "additionalProperties": false
+    },
+
+    "TodoWriteInput": {
+      "type": "object",
+      "properties": {
+        "todos": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TodoItem" },
+          "description": "Updated todo list"
+        }
+      },
+      "required": ["todos"],
+      "additionalProperties": false
+    },
+
+    "QuestionOption": {
+      "type": "object",
+      "properties": {
+        "label": { "type": "string", "description": "Display text for option" },
+        "description": { "type": "string", "description": "Explanation of option" }
+      },
+      "required": ["label", "description"],
+      "additionalProperties": false
+    },
+
+    "Question": {
+      "type": "object",
+      "properties": {
+        "question": { "type": "string", "description": "The question to ask" },
+        "header": { "type": "string", "maxLength": 12, "description": "Short label (max 12 chars)" },
+        "options": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/QuestionOption" },
+          "minItems": 2,
+          "maxItems": 4
+        },
+        "multiSelect": { "type": "boolean", "default": false }
+      },
+      "required": ["question", "header", "options", "multiSelect"],
+      "additionalProperties": false
+    },
+
+    "AskUserQuestionInput": {
+      "type": "object",
+      "properties": {
+        "questions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Question" },
+          "minItems": 1,
+          "maxItems": 4
+        },
+        "answers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "User answers"
+        }
+      },
+      "required": ["questions"],
+      "additionalProperties": false
+    },
+
+    "NotebookEditInput": {
+      "type": "object",
+      "properties": {
+        "notebook_path": { "type": "string", "description": "Absolute path to notebook" },
+        "new_source": { "type": "string", "description": "New cell source" },
+        "cell_id": { "type": "string", "description": "Cell ID to edit" },
+        "cell_type": { "type": "string", "enum": ["code", "markdown"] },
+        "edit_mode": { "type": "string", "enum": ["replace", "insert", "delete"] }
+      },
+      "required": ["notebook_path", "new_source"],
+      "additionalProperties": false
+    },
+
+    "EnterPlanModeInput": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+
+    "ExitPlanModeInput": {
+      "type": "object",
+      "properties": {
+        "plan": { "type": "string", "description": "Plan content" }
+      },
+      "additionalProperties": false
+    },
+
+    "SkillInput": {
+      "type": "object",
+      "properties": {
+        "skill": { "type": "string", "description": "Skill name to invoke" },
+        "args": { "type": "string", "description": "Optional arguments" }
+      },
+      "required": ["skill"],
+      "additionalProperties": false
+    },
+
+    "KillShellInput": {
+      "type": "object",
+      "properties": {
+        "shell_id": { "type": "string", "description": "ID of shell to kill" }
+      },
+      "required": ["shell_id"],
+      "additionalProperties": false
+    },
+
+    "TaskOutputInput": {
+      "type": "object",
+      "properties": {
+        "task_id": { "type": "string", "description": "Task ID to get output from" },
+        "block": { "type": "boolean", "default": true, "description": "Wait for completion" },
+        "timeout": { "type": "integer", "minimum": 0, "maximum": 600000, "description": "Max wait time in ms" }
+      },
+      "required": ["task_id"],
+      "additionalProperties": false
+    },
+
+    "MCPToolInput": {
+      "type": "object",
+      "description": "Generic MCP tool input",
+      "additionalProperties": true
+    },
+
+    "ToolInput": {
+      "description": "Tool-specific input parameters",
+      "oneOf": [
+        { "$ref": "#/$defs/BashInput" },
+        { "$ref": "#/$defs/ReadInput" },
+        { "$ref": "#/$defs/WriteInput" },
+        { "$ref": "#/$defs/EditInput" },
+        { "$ref": "#/$defs/GlobInput" },
+        { "$ref": "#/$defs/GrepInput" },
+        { "$ref": "#/$defs/WebSearchInput" },
+        { "$ref": "#/$defs/WebFetchInput" },
+        { "$ref": "#/$defs/TaskInput" },
+        { "$ref": "#/$defs/TodoWriteInput" },
+        { "$ref": "#/$defs/AskUserQuestionInput" },
+        { "$ref": "#/$defs/NotebookEditInput" },
+        { "$ref": "#/$defs/EnterPlanModeInput" },
+        { "$ref": "#/$defs/ExitPlanModeInput" },
+        { "$ref": "#/$defs/SkillInput" },
+        { "$ref": "#/$defs/KillShellInput" },
+        { "$ref": "#/$defs/TaskOutputInput" },
+        { "$ref": "#/$defs/MCPToolInput" }
+      ]
+    },
+
+    "TextBlock": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "text" },
+        "text": { "type": "string" }
+      },
+      "required": ["type", "text"],
+      "additionalProperties": false
+    },
+
+    "ThinkingBlock": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "thinking" },
+        "thinking": { "type": "string", "description": "Claude's reasoning" },
+        "signature": { "type": "string", "description": "Cryptographic signature (base64)" }
+      },
+      "required": ["type", "thinking", "signature"],
+      "additionalProperties": false
+    },
+
+    "ToolUseBlock": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "tool_use" },
+        "id": {
+          "type": "string",
+          "pattern": "^toolu_[a-zA-Z0-9]+$",
+          "description": "Tool use ID"
+        },
+        "name": { "$ref": "#/$defs/ToolName" },
+        "input": { "type": "object", "description": "Tool-specific input" }
+      },
+      "required": ["type", "id", "name", "input"],
+      "additionalProperties": false
+    },
+
+    "ToolResultContentItem": {
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "text" },
+            "text": { "type": "string" }
+          },
+          "required": ["type", "text"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "image" },
+            "source": {
+              "type": "object",
+              "properties": {
+                "type": { "const": "base64" },
+                "media_type": { "type": "string", "enum": ["image/png", "image/jpeg", "image/gif", "image/webp"] },
+                "data": { "type": "string" }
+              },
+              "required": ["type", "media_type", "data"]
+            }
+          },
+          "required": ["type", "source"]
+        }
+      ]
+    },
+
+    "ToolResultBlock": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "tool_result" },
+        "tool_use_id": {
+          "type": "string",
+          "pattern": "^toolu_[a-zA-Z0-9]+$"
+        },
+        "content": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "array",
+              "items": { "$ref": "#/$defs/ToolResultContentItem" }
+            }
+          ]
+        },
+        "is_error": { "type": "boolean" }
+      },
+      "required": ["type", "tool_use_id", "content"],
+      "additionalProperties": false
+    },
+
+    "ImageBlock": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "image" },
+        "source": {
+          "type": "object",
+          "properties": {
+            "type": { "const": "base64" },
+            "media_type": { "type": "string", "enum": ["image/png", "image/jpeg", "image/gif", "image/webp"] },
+            "data": { "type": "string", "contentEncoding": "base64" }
+          },
+          "required": ["type", "media_type", "data"]
+        }
+      },
+      "required": ["type", "source"],
+      "additionalProperties": false
+    },
+
+    "ContentBlock": {
+      "oneOf": [
+        { "$ref": "#/$defs/TextBlock" },
+        { "$ref": "#/$defs/ThinkingBlock" },
+        { "$ref": "#/$defs/ToolUseBlock" },
+        { "$ref": "#/$defs/ToolResultBlock" },
+        { "$ref": "#/$defs/ImageBlock" }
+      ]
+    },
+
+    "ThinkingMetadata": {
+      "type": "object",
+      "properties": {
+        "level": { "type": "string", "enum": ["high", "medium", "low"] },
+        "disabled": { "type": "boolean" },
+        "triggers": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+
+    "UsageInfo": {
+      "type": "object",
+      "properties": {
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "cache_creation_input_tokens": { "type": "integer", "minimum": 0 },
+        "cache_read_input_tokens": { "type": "integer", "minimum": 0 },
+        "cache_creation": {
+          "type": "object",
+          "properties": {
+            "ephemeral_5m_input_tokens": { "type": "integer" },
+            "ephemeral_1h_input_tokens": { "type": "integer" }
+          },
+          "additionalProperties": true
+        },
+        "service_tier": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "server_tool_use": { "type": "object", "additionalProperties": true }
+      },
+      "required": ["input_tokens", "output_tokens"],
+      "additionalProperties": true
+    },
+
+    "UserMessageContent": {
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ContentBlock" }
+        }
+      ],
+      "description": "User message content - string when isCompactSummary, array otherwise"
+    },
+
+    "UserMessage": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "user" },
+        "uuid": { "$ref": "#/$defs/UUID" },
+        "parentUuid": {
+          "oneOf": [
+            { "$ref": "#/$defs/UUID" },
+            { "type": "null" }
+          ]
+        },
+        "sessionId": { "$ref": "#/$defs/UUID" },
+        "timestamp": { "$ref": "#/$defs/ISO8601Timestamp" },
+        "version": { "$ref": "#/$defs/CLIVersion" },
+        "cwd": { "type": "string", "description": "Current working directory" },
+        "gitBranch": { "type": "string", "description": "Git branch name" },
+        "isSidechain": { "type": "boolean" },
+        "userType": { "type": "string", "const": "external" },
+        "message": {
+          "type": "object",
+          "properties": {
+            "role": { "const": "user" },
+            "content": { "$ref": "#/$defs/UserMessageContent" }
+          },
+          "required": ["role", "content"],
+          "additionalProperties": true
+        },
+        "thinkingMetadata": { "$ref": "#/$defs/ThinkingMetadata" },
+        "todos": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TodoItem" }
+        },
+        "isMeta": { "type": "boolean" },
+        "isCompactSummary": { "type": "boolean", "description": "When true, content is summary string" },
+        "agentId": { "type": "string", "description": "Agent ID (in agent session files)" },
+        "slug": { "type": "string", "description": "Human-readable session name" }
+      },
+      "required": ["type", "uuid", "parentUuid", "sessionId", "timestamp", "version", "cwd", "isSidechain", "userType", "message"],
+      "additionalProperties": true
+    },
+
+    "AssistantMessage": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "assistant" },
+        "uuid": { "$ref": "#/$defs/UUID" },
+        "parentUuid": {
+          "oneOf": [
+            { "$ref": "#/$defs/UUID" },
+            { "type": "null" }
+          ]
+        },
+        "sessionId": { "$ref": "#/$defs/UUID" },
+        "timestamp": { "$ref": "#/$defs/ISO8601Timestamp" },
+        "version": { "$ref": "#/$defs/CLIVersion" },
+        "cwd": { "type": "string" },
+        "gitBranch": { "type": "string" },
+        "isSidechain": { "type": "boolean" },
+        "userType": { "type": "string", "const": "external" },
+        "requestId": {
+          "type": "string",
+          "pattern": "^req_[a-zA-Z0-9]+$",
+          "description": "API request ID"
+        },
+        "message": {
+          "type": "object",
+          "properties": {
+            "model": { "$ref": "#/$defs/ModelId" },
+            "id": {
+              "type": "string",
+              "description": "API message ID (msg_* pattern or UUID for synthetic)"
+            },
+            "type": { "const": "message" },
+            "role": { "const": "assistant" },
+            "content": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/ContentBlock" }
+            },
+            "stop_reason": {
+              "oneOf": [
+                { "type": "string", "enum": ["end_turn", "tool_use", "max_tokens", "stop_sequence"] },
+                { "type": "null" }
+              ]
+            },
+            "stop_sequence": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "null" }
+              ]
+            },
+            "usage": { "$ref": "#/$defs/UsageInfo" }
+          },
+          "required": ["model", "id", "type", "role", "content", "stop_reason", "stop_sequence", "usage"],
+          "additionalProperties": true
+        },
+        "agentId": { "type": "string" },
+        "slug": { "type": "string" },
+        "isApiErrorMessage": { "type": "boolean", "description": "Whether this is an API error message" },
+        "error": { "type": "string", "description": "Error type (e.g., rate_limit)" }
+      },
+      "required": ["type", "uuid", "parentUuid", "sessionId", "timestamp", "version", "cwd", "isSidechain", "userType", "message"],
+      "additionalProperties": true
+    },
+
+    "SystemMessage": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "system" },
+        "uuid": { "$ref": "#/$defs/UUID" },
+        "parentUuid": {
+          "oneOf": [
+            { "$ref": "#/$defs/UUID" },
+            { "type": "null" }
+          ]
+        },
+        "sessionId": { "$ref": "#/$defs/UUID" },
+        "timestamp": { "$ref": "#/$defs/ISO8601Timestamp" },
+        "version": { "$ref": "#/$defs/CLIVersion" },
+        "cwd": { "type": "string" },
+        "gitBranch": { "type": "string" },
+        "isSidechain": { "type": "boolean" },
+        "userType": { "type": "string", "const": "external" },
+        "subtype": {
+          "type": "string",
+          "enum": ["local_command", "turn_duration", "api_error", "stop_hook_summary", "compact_boundary"],
+          "description": "System message subtype"
+        },
+        "content": { "type": "string", "description": "Message content" },
+        "level": { "type": "string", "enum": ["info", "warn", "error", "suggestion"] },
+        "durationMs": { "type": "integer", "minimum": 0, "description": "Duration in milliseconds" },
+        "isMeta": { "type": "boolean" },
+        "agentId": { "type": "string" },
+        "slug": { "type": "string" },
+        "hookCount": { "type": "integer", "description": "Number of hooks triggered (stop_hook_summary)" },
+        "hookInfos": { "type": "array", "items": { "type": "object" }, "description": "Hook information (stop_hook_summary)" },
+        "hookErrors": { "type": "array", "items": { "oneOf": [{ "type": "object" }, { "type": "string" }] }, "description": "Hook errors (stop_hook_summary)" },
+        "preventedContinuation": { "type": "boolean", "description": "Whether hook prevented continuation" },
+        "stopReason": { "type": "string", "description": "Reason for stop" },
+        "hasOutput": { "type": "boolean", "description": "Whether there is output" },
+        "toolUseID": { "type": "string", "description": "Tool use ID" },
+        "logicalParentUuid": { "$ref": "#/$defs/UUID", "description": "Logical parent UUID (compact_boundary)" },
+        "compactMetadata": {
+          "type": "object",
+          "properties": {
+            "trigger": { "type": "string" },
+            "preTokens": { "type": "integer" }
+          },
+          "description": "Compact metadata (compact_boundary)"
+        }
+      },
+      "required": ["type", "uuid", "parentUuid", "sessionId", "timestamp", "version", "cwd", "isSidechain", "userType", "subtype"],
+      "additionalProperties": true
+    },
+
+    "SummaryMessage": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "summary" },
+        "summary": { "type": "string", "description": "Human-readable conversation summary" },
+        "leafUuid": { "$ref": "#/$defs/UUID", "description": "UUID of last summarized message" }
+      },
+      "required": ["type", "summary", "leafUuid"],
+      "additionalProperties": true
+    },
+
+    "FileBackupInfo": {
+      "type": "object",
+      "properties": {
+        "originalContent": { "type": "string", "description": "Original file content (legacy)" },
+        "path": { "type": "string", "description": "File path (legacy)" },
+        "backupFileName": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ],
+          "description": "Backup file identifier"
+        },
+        "version": { "type": "integer", "minimum": 1, "description": "Backup version number" },
+        "backupTime": { "$ref": "#/$defs/ISO8601Timestamp", "description": "Backup timestamp" }
+      },
+      "additionalProperties": true
+    },
+
+    "FileHistorySnapshot": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "file-history-snapshot" },
+        "messageId": { "$ref": "#/$defs/UUID" },
+        "snapshot": {
+          "type": "object",
+          "properties": {
+            "messageId": { "$ref": "#/$defs/UUID" },
+            "trackedFileBackups": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/$defs/FileBackupInfo" },
+              "description": "Map of file path to backup info"
+            },
+            "timestamp": { "$ref": "#/$defs/ISO8601Timestamp" }
+          },
+          "required": ["messageId", "trackedFileBackups", "timestamp"],
+          "additionalProperties": true
+        },
+        "isSnapshotUpdate": { "type": "boolean" }
+      },
+      "required": ["type", "messageId", "snapshot", "isSnapshotUpdate"],
+      "additionalProperties": true
+    },
+
+    "QueueOperation": {
+      "type": "object",
+      "description": "Queue operation for message queuing",
+      "properties": {
+        "type": { "const": "queue-operation" },
+        "operation": { "type": "string", "enum": ["enqueue", "remove", "dequeue", "popAll"] },
+        "timestamp": { "$ref": "#/$defs/ISO8601Timestamp" },
+        "sessionId": { "$ref": "#/$defs/UUID" },
+        "content": { "type": "string", "description": "Message content (for enqueue)" }
+      },
+      "required": ["type", "operation", "timestamp", "sessionId"],
+      "additionalProperties": true
+    }
+  }
+}
