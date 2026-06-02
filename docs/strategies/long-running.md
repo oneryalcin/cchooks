@@ -1,15 +1,11 @@
 # Long-Running Agent Strategy
 
-!!! warning "Deprecated — compose the harness recipes instead"
-    `LongRunningStrategy` is deprecated. The reusable mechanisms now ship as
-    standalone, testable **recipes** you pipe together — `kill_switch`, `steer`,
-    `evidence_gate`, `evaluator_gate`, `heartbeat`, `commit_on_stop` — via
-    `include_recipes` (or `app.include(...)`). This class also bundled
-    opinionated *prompt* content (initializer/coding session routing,
-    progress-file handoff); that part is intentionally not ported — write your
-    own `@app.on_session_start` context if you want it. See
+!!! note "Prefer composing recipes"
+    The mechanisms here also ship as standalone, composable **recipes**
+    (`kill_switch`, `steer`, `evidence_gate`, `evaluator_gate`, `heartbeat`,
+    `commit_on_stop`). See
     [`examples/long_running_harness.py`](https://github.com/oneryalcin/fasthooks/blob/main/examples/long_running_harness.py)
-    for the full recipe-composed replacement.
+    for the recipe-based way to assemble a harness — most projects will prefer it.
 
 The `LongRunningStrategy` implements Anthropic's two-agent pattern for autonomous agents that work across multiple context windows. It prevents the two common failure modes of long-running agents: **one-shotting** (trying to do everything at once) and **premature victory** (declaring done too early).
 

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import warnings
 from pathlib import Path
 from typing import Any, Literal
 
@@ -234,22 +233,17 @@ Before context fills up:
 
 
 class LongRunningStrategy(Strategy):
-    """Harness for long-running autonomous agents.
-
-    .. deprecated::
-        Prefer composing the harness **recipes** over this monolith. The
-        reusable mechanisms now ship as standalone, testable recipes you pipe
-        together with ``include_recipes`` (or ``app.include(...)``):
-        ``kill_switch``, ``steer``, ``evidence_gate``, ``evaluator_gate``,
-        ``heartbeat``, ``commit_on_stop``. This class additionally bundled
-        opinionated *prompt* content (initializer/coding session routing,
-        progress-file handoff) — that part is intentionally not ported; write
-        your own ``@app.on_session_start`` context if you want it. See
-        ``examples/long_running_harness.py`` for the full composed replacement.
+    """Harness for long-running autonomous agents (bundled form).
 
     Implements the two-agent pattern:
     - Initializer: First run sets up feature_list.json, init.sh, git
     - Coding: Subsequent runs make incremental progress
+
+    The reusable mechanisms here also ship as standalone, composable **recipes**
+    (``kill_switch``, ``steer``, ``evidence_gate``, ``evaluator_gate``,
+    ``heartbeat``, ``commit_on_stop``) — see
+    ``examples/long_running_harness.py`` for the recipe-based way to assemble a
+    harness, which most projects will prefer.
     """
 
     class Meta:
@@ -289,16 +283,6 @@ class LongRunningStrategy(Strategy):
         exclude_paths: list[str] | None = None,
         **config: Any,
     ):
-        warnings.warn(
-            "LongRunningStrategy is deprecated; compose the harness recipes "
-            "(kill_switch, steer, evidence_gate, evaluator_gate, heartbeat, "
-            "commit_on_stop) via include_recipes instead. Its session-routing "
-            "prompt content is not ported — write your own on_session_start "
-            "context. See examples/long_running_harness.py for the full "
-            "recipe-composed replacement.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         super().__init__(**config)
         self.feature_list = feature_list
         self.progress_file = progress_file

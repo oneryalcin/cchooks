@@ -10,12 +10,6 @@ from fasthooks.strategies import LongRunningStrategy
 from fasthooks.testing import StrategyTestClient
 
 
-def test_long_running_strategy_is_deprecated():
-    """Construction warns; compose the harness recipes via include_recipes instead."""
-    with pytest.warns(DeprecationWarning, match="include_recipes"):
-        LongRunningStrategy()
-
-
 def get_response_text(response: Any) -> str:
     """Extract text from response (handles ContextResponse and HookResponse)."""
     if response is None:

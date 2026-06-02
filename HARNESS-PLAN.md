@@ -86,13 +86,13 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
       in the loop. Overlaps with the observer stream (which already timestamps
       every event) — the file is the no-DB, tail-from-a-terminal alternative.
       `fasthooks add heartbeat`.
-- [x] **P4 · deprecate `LongRunningStrategy`** — ✅ done (2026-06-02). Extracted
-      the missing reusable mechanism (`commit_on_stop`, cwc-style auto-commit
-      backstop) as the 6th recipe, then deprecated the strategy (DeprecationWarning
-      + docstring + docs banner) pointing at `include_recipes`. Its opinionated
-      session-routing/handoff *prompt* content is intentionally dropped — roll
-      your own `@app.on_session_start` context. Kept (not deleted) for a
-      migration window. `fasthooks add commit-on-stop`.
+- [x] **P4 · composable harness > `LongRunningStrategy`** — ✅ done (2026-06-02).
+      Extracted the missing reusable mechanism (`commit_on_stop`, cwc-style
+      auto-commit backstop) as the 6th recipe, and added
+      `examples/long_running_harness.py` showing the recipe-composed harness.
+      `LongRunningStrategy` stays as-is with a plain doc/docstring note pointing
+      at the recipe approach. **No deprecation ceremony** — no users, greenfield;
+      just state the current preferred shape. `fasthooks add commit-on-stop`.
 - [ ] **P5 · dashboard showcase (separate repo)** — consumes fasthooks'
       `SQLiteObserver`/studio event stream + on-disk artifacts (PROGRESS, git
       log, tests.json, screenshots). fasthooks = substrate; dashboard = app.
@@ -142,10 +142,10 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
 - 2026-06-02 — P2 `evaluator-gate`: ship with 3 guards (recursion sentinel,
   timeout, fail-open). Plumbing + guards verified with a stub evaluator.
 - 2026-06-02 — P4: extract `commit_on_stop` (cwc auto-commit backstop) as a
-  recipe, then **deprecate `LongRunningStrategy`** (warn, keep for a migration
-  window) — recipes cover the mechanisms; the strategy's prompt/routing content
-  is dropped as the opinionated god-class part. Resolves the P4 open question
-  (deprecate, not thin-bundle).
+  recipe + add `examples/long_running_harness.py` (recipe-composed harness).
+  **Decided NOT to deprecate** `LongRunningStrategy` — no users, greenfield, so a
+  DeprecationWarning + migration ceremony is fluff. Just state the current
+  preferred shape (recipes) with a plain doc note; leave the strategy as-is.
 - 2026-06-02 — Deprecation needs a *replacement*, not just a warning: added
   `examples/long_running_harness.py` — the full harness composed from the 6
   recipes (with `state_dir`, gate-then-commit ordering, and the session-routing
