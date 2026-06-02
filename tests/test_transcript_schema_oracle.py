@@ -50,8 +50,8 @@ def _schema_path_for(version: str) -> Path:
     major, minor, _ = (int(p) for p in version.split(".")[:3])
     if (major, minor) == (2, 0):
         return _SCHEMAS / "claude-code-session-v2.0.76.schema.json"
-    if (major, minor) == (2, 1):  # the 2.1.144 schema covers CLI 2.1.97+
-        return _SCHEMAS / "claude-code-session-v2.1.144.schema.json"
+    if (major, minor) == (2, 1):  # the 2.1.160 schema is a superset of earlier 2.1.x
+        return _SCHEMAS / "claude-code-session-v2.1.160.schema.json"
     raise AssertionError(f"no vendored schema for CLI {version} — vendor one")
 
 

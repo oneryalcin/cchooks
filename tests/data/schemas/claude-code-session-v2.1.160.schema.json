@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/oneryalcin/agent-schemas/claude-code/v2.1.144/session.schema.json",
-  "title": "Claude Code Session Schema (v2.1.144)",
-  "description": "Schema for Claude Code CLI session JSONL format. Each line in a .jsonl file should validate against this schema. Covers CLI versions 2.1.97 through 2.1.144.",
-  "x-cli-version": "2.1.144",
-  "x-generated-date": "2026-05-19",
-  "x-data-source": "Extended from v2.1.72. Initial subtypes derived from observation of 660 JSONL files spanning CLI 2.1.97-2.1.144. Subsequent pass via mine_binary.py extracted 13 additional attachment subtypes from the CLI 2.1.144 binary (~/.local/share/claude/versions/2.1.144) \u2014 these are canonical from the TypeScript source but not present in the observational corpus. Tool schemas validated against captured/tools_2.1.144.json. Third pass via mine_tools.py recovered 3 binary-only tool input schemas (PowerShell, RemoteTrigger, SendUserFile) that are platform-/environment-gated and don't appear in the macOS default tool capture. Fourth pass via drift_scan.py surfaced and added: entrypoint on User/Assistant/SystemMessage; sessionKind on Attachment/SystemMessage; messageCount on SystemMessage; stop_details/diagnostics/context_management/container on assistant.message; displayPath on AttachmentFile and AttachmentNestedMemory.",
+  "$id": "https://github.com/oneryalcin/agent-schemas/claude-code/v2.1.160/session.schema.json",
+  "title": "Claude Code Session Schema (v2.1.160)",
+  "description": "Schema for Claude Code CLI session JSONL format. Each line in a .jsonl file should validate against this schema. Covers CLI versions 2.1.146 through 2.1.160.",
+  "x-cli-version": "2.1.160",
+  "x-generated-date": "2026-06-02",
+  "x-data-source": "Extended from v2.1.144. Added the version-less `mode` metadata record (type/mode/sessionId), observed 990 times across CLI 2.1.146-2.1.160 (mode value only \"normal\" in corpus; binary shows `mode` is a distinct enum from `permissionMode`, so it is typed as a bare string). Also inherits the v2.1.144 `last-prompt` relaxation (lastPrompt no longer required). Validated against 112 real session files spanning CLI 2.1.150-2.1.160.",
   "oneOf": [
     {
       "$ref": "#/$defs/UserMessage"
@@ -57,6 +57,9 @@
     },
     {
       "$ref": "#/$defs/WorktreeStateMessage"
+    },
+    {
+      "$ref": "#/$defs/ModeMessage"
     }
   ],
   "$defs": {
@@ -144,7 +147,8 @@
         "WaitForMcpServers",
         "RemoteTrigger",
         "PowerShell",
-        "SendUserFile"
+        "SendUserFile",
+        "Workflow"
       ],
       "description": "Built-in tool name. Includes lowercase \"bash\" (observed Haiku model variant). PowerShell/SendUserFile/RemoteTrigger are conditionally enabled (Windows-only / remote-environment / claude.ai-bridge respectively) and absent from the macOS no-remote default capture, but are documented here from binary mining (see mine_tools.py)."
     },
@@ -1213,6 +1217,9 @@
         },
         {
           "$ref": "#/$defs/SendUserFileInput"
+        },
+        {
+          "$ref": "#/$defs/WorkflowInput"
         }
       ]
     },
@@ -1879,6 +1886,10 @@
         "entrypoint": {
           "type": "string",
           "description": "Where this session line was produced from (e.g. 'cli', 'sdk-py', 'sdk-cli', 'sdk-ts')."
+        },
+        "interruptedMessageId": {
+          "type": "string",
+          "description": "ID of the assistant message the user interrupted (msg_...). Added ~2.1.150."
         }
       },
       "required": [
@@ -2148,6 +2159,14 @@
         "entrypoint": {
           "type": "string",
           "description": "Where this session line was produced from (e.g. 'cli', 'sdk-py', 'sdk-cli', 'sdk-ts')."
+        },
+        "attributionMcpServer": {
+          "type": "string",
+          "description": "MCP server credited for this assistant turn (e.g. \"plugin:sentry:sentry\"). Added ~2.1.150."
+        },
+        "attributionMcpTool": {
+          "type": "string",
+          "description": "MCP tool credited for this assistant turn (e.g. \"find_projects\"). Added ~2.1.150."
         }
       },
       "required": [
@@ -2429,6 +2448,10 @@
           "type": "integer",
           "minimum": 0,
           "description": "Total message count up to this point (surfaced on turn_duration system messages)."
+        },
+        "pendingBackgroundAgentCount": {
+          "type": "integer",
+          "description": "Number of background agents still running. Observed on system[turn_duration]. Added ~2.1.150."
         }
       },
       "required": [
@@ -2990,7 +3013,7 @@
         },
         "lastPrompt": {
           "type": "string",
-          "description": "Last user prompt text"
+          "description": "Last user prompt text. Optional \u2014 a real variant carries only type/leafUuid/sessionId (observed across CLI 2.1.128+)."
         },
         "sessionId": {
           "$ref": "#/$defs/UUID"
@@ -3002,7 +3025,6 @@
       },
       "required": [
         "type",
-        "lastPrompt",
         "sessionId"
       ],
       "additionalProperties": true
@@ -3796,6 +3818,13 @@
         },
         "isInitial": {
           "type": "boolean"
+        },
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Names of the listed skills. Added ~2.1.150."
         }
       },
       "required": [
@@ -4325,6 +4354,15 @@
             },
             {
               "$ref": "#/$defs/AttachmentTaskStatus"
+            },
+            {
+              "$ref": "#/$defs/AttachmentUltrathinkEffort"
+            },
+            {
+              "$ref": "#/$defs/AttachmentUltraEffortEnter"
+            },
+            {
+              "$ref": "#/$defs/AttachmentUltraEffortExit"
             }
           ]
         },
@@ -4799,6 +4837,106 @@
       ],
       "additionalProperties": false,
       "description": "Deliver files (screenshots, reports, artifacts) to the user. Conditionally enabled in remote-environment sessions only."
+    },
+    "ModeMessage": {
+      "type": "object",
+      "description": "Session mode metadata record. Version-less, emitted alongside permission-mode/last-prompt. Distinct enum from PermissionModeMessage.permissionMode (binary-confirmed). Observed value: \"normal\". Added in CLI ~2.1.152.",
+      "properties": {
+        "type": {
+          "const": "mode"
+        },
+        "mode": {
+          "type": "string",
+          "description": "Session mode. Observed: \"normal\". Distinct from permissionMode; full enum unconfirmed."
+        },
+        "sessionId": {
+          "$ref": "#/$defs/UUID"
+        }
+      },
+      "required": [
+        "type",
+        "mode",
+        "sessionId"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentUltrathinkEffort": {
+      "type": "object",
+      "description": "Ultrathink effort marker. Emitted when the user triggers extended-thinking effort. Marker-only payload.",
+      "properties": {
+        "type": {
+          "const": "ultrathink_effort"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentUltraEffortEnter": {
+      "type": "object",
+      "description": "Ultra-effort enter marker. Binary-canonical (mine_binary.py, CLI 2.1.160); not yet observed in corpus.",
+      "properties": {
+        "type": {
+          "const": "ultra_effort_enter"
+        },
+        "reminderType": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentUltraEffortExit": {
+      "type": "object",
+      "description": "Ultra-effort exit marker. Binary-canonical (mine_binary.py, CLI 2.1.160); not yet observed in corpus.",
+      "properties": {
+        "type": {
+          "const": "ultra_effort_exit"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true
+    },
+    "WorkflowInput": {
+      "type": "object",
+      "properties": {
+        "script": {
+          "description": "Self-contained workflow script. Must begin with `export const meta = { name, description, phases }` (pure literal, no computed values) followed by the script body using agent()/parallel()/pipeline()/phase().",
+          "type": "string",
+          "maxLength": 524288
+        },
+        "name": {
+          "description": "Name of a predefined workflow (built-in or from .claude/workflows/). Resolves to a self-contained script.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Ignored \u2014 set the workflow description in the script's `meta` block.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Ignored \u2014 set the workflow title in the script's `meta` block.",
+          "type": "string"
+        },
+        "args": {
+          "description": "Optional input value exposed to the script as the global `args`, verbatim. Pass arrays/objects as actual JSON values, NOT as a JSON-encoded string \u2014 a stringified list breaks `args.filter`/`args.map` in the script. Use for parameterized named workflows (e.g. a research question)."
+        },
+        "scriptPath": {
+          "description": "Path to a workflow script file on disk. Every Workflow invocation persists its script under the session directory and returns the path in the tool result. To iterate, edit that file with Write/Edit and re-invoke Workflow with the same `scriptPath` instead of re-sending the full script. Takes precedence over `script` and `name`.",
+          "type": "string"
+        },
+        "resumeFromRunId": {
+          "description": "Run ID of a prior Workflow invocation to resume from. Completed agent() calls with unchanged (prompt, opts) return their cached results instantly; only edited or new calls re-run. Same-session only. Stop the prior run first (TaskStop) before resuming.",
+          "type": "string",
+          "pattern": "^wf_[a-z0-9-]{6,}$"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Workflow tool input \u2014 orchestrates multiple subagents deterministically. One of script/name/scriptPath selects the workflow source."
     }
   }
 }

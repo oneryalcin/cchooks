@@ -2,6 +2,7 @@
 from fasthooks.transcript.blocks import (
     AdvisorToolResultBlock,
     ContentBlock,
+    ImageBlock,
     ServerToolUseBlock,
     TextBlock,
     ThinkingBlock,
@@ -39,6 +40,7 @@ __all__ = [
     "ThinkingBlock",
     "ToolResultBlock",
     "ToolUseBlock",
+    "ImageBlock",
     "ServerToolUseBlock",
     "AdvisorToolResultBlock",
     "UnknownBlock",

@@ -11,7 +11,7 @@ must validate against the schema for the record's CLI version.
 | File | Source | Version |
 |------|--------|---------|
 | `claude-code-session-v2.0.76.schema.json` | [oneryalcin/agent-schemas](https://github.com/oneryalcin/agent-schemas) `claude-code/v2.0.76/session.schema.json` @ `dfa9f8f` | CLI 2.0.76 |
-| `claude-code-session-v2.1.144.schema.json` | [oneryalcin/agent-schemas](https://github.com/oneryalcin/agent-schemas) `claude-code/v2.1.144/session.schema.json` @ `dfa9f8f` | CLI 2.1.97+ (current) |
+| `claude-code-session-v2.1.160.schema.json` | [oneryalcin/agent-schemas](https://github.com/oneryalcin/agent-schemas) `claude-code/v2.1.160/session.schema.json` @ `384286e` | CLI 2.1.x (current; superset of earlier 2.1) |
 
 The oracle (`_schema_path_for`) maps each sample's `version` field to the matching
 schema here. The 2.1.x sample (`sample_subagent_v2_1.jsonl`) is a real subagent
