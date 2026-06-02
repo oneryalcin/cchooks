@@ -41,7 +41,7 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
 | Default-FAIL contract — feature list | — | ✅ `feature_list.json` tracking | keep |
 | **Default-FAIL contract — evidence gate** (`track-read`+`verify-gate`: can't mark pass without Reading evidence) | **PROOF IT LOOKED · HARD GATE** | ✅ **shipped** — `evidence_gate` recipe (P1) | done |
 | **Fresh-context evaluator** (subagent PASS/NEEDS_WORK) | **SECOND OPINION · EVALUATOR** | ✅ **shipped** — `evaluator_gate` recipe (P2), 3 guards | done |
-| **Stall / heartbeat** ("goes quiet → loop moves on") | **LAST CHECK-IN · WATCHDOG** | ⚠️ partial (could emit heartbeat; the *timeout→next* is loop) | hook emits heartbeat; loop owns timeout |
+| **Stall / heartbeat** ("goes quiet → loop moves on") | **LAST CHECK-IN · WATCHDOG** | ✅ **shipped** — `heartbeat` recipe (P3) emits the signal; loop owns timeout | done |
 | Token-budget warnings | — | ✅ `TokenBudgetStrategy` (100k/150k/180k) | keep |
 
 ---
@@ -79,9 +79,13 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
       `fasthooks add evaluator-gate`. All guards verified with a stub; a real
       `claude --agent` live test is still worth doing but the recipe is safe by
       design.
-- [ ] **P3 · `heartbeat` primitive** — emit a "still alive" signal (last
-      tool-call timestamp) via observer/State so a watchdog/dashboard can detect
-      stalls. The *timeout→next-feature* decision stays in the loop.
+- [x] **P3 · `heartbeat` primitive** — ✅ shipped (2026-06-02). Catch-all
+      `pre_tool` overwrites a marker file (`{ts, tool, session_id}`) on every
+      tool call; passive (never blocks/raises). A watchdog/dashboard reads the
+      freshest `ts` to detect stalls; the *timeout→next-feature* decision stays
+      in the loop. Overlaps with the observer stream (which already timestamps
+      every event) — the file is the no-DB, tail-from-a-terminal alternative.
+      `fasthooks add heartbeat`.
 - [ ] **P4 · decompose `LongRunningStrategy`** → a thin bundle of the recipes
       above (or deprecate it in favor of `include_recipes(...)`). DX-first.
 - [ ] **P5 · dashboard showcase (separate repo)** — consumes fasthooks'

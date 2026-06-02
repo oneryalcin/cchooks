@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from fasthooks.recipes.evaluator_gate import evaluator_gate
 from fasthooks.recipes.evidence_gate import evidence_gate
+from fasthooks.recipes.heartbeat import heartbeat
 from fasthooks.recipes.kill_switch import kill_switch
 from fasthooks.recipes.steer import steer
 
@@ -34,6 +35,7 @@ __all__ = [
     "steer",
     "evidence_gate",
     "evaluator_gate",
+    "heartbeat",
     "RECIPES",
     "scaffold_for",
     "include_recipes",
@@ -86,6 +88,16 @@ RECIPES: dict[str, RecipeSpec] = {
             "evaluator -p '...'`). On Stop it runs the evaluator and blocks "
             "unless the first output line is PASS; findings become the next "
             "turn's prompt. Fail-open + recursion-guarded."
+        ),
+    ),
+    "heartbeat": RecipeSpec(
+        factory=heartbeat,
+        summary="Write a 'still alive' marker on every tool call (stall detection).",
+        doc=(
+            "Overwrites path with {ts, tool, session_id} on each tool call so a "
+            "watchdog/dashboard can detect stalls. Passive (never blocks). If "
+            "you run the SQLiteObserver/studio you already have timestamps "
+            "there; this is the no-DB, tail-from-a-terminal alternative."
         ),
     ),
 }

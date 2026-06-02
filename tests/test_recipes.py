@@ -1,12 +1,15 @@
 """Recipes: engine behavior, scaffolding, and fail-open discovery."""
 from __future__ import annotations
 
+import json
+
 from rich.console import Console
 
 from fasthooks import HookApp
 from fasthooks.recipes import (
     evaluator_gate,
     evidence_gate,
+    heartbeat,
     include_recipes,
     kill_switch,
     scaffold_for,
@@ -142,6 +145,18 @@ def test_evidence_gate_fails_open_without_persistent_state(tmp_path, capsys):
     # No evidence read; with real State this would deny. Here it must allow.
     assert c.send(MockEvent.write("test-results.json", "{}")) is None
     assert "inert" in capsys.readouterr().err
+
+
+def test_heartbeat_writes_marker_and_is_passive(tmp_path):
+    app = HookApp()
+    app.include(heartbeat(path="hb.json"))
+    r = TestClient(app).send(MockEvent.bash("ls", cwd=str(tmp_path)))
+    assert r is None  # passive — never affects the decision
+
+    marker = tmp_path / "hb.json"
+    assert marker.exists()
+    data = json.loads(marker.read_text())
+    assert data["tool"] == "Bash" and data["ts"] > 0
 
 
 # ── Scaffolding ──────────────────────────────────────────────────────────────
