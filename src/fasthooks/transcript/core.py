@@ -11,8 +11,8 @@ from fasthooks.transcript.blocks import ToolResultBlock, ToolUseBlock
 from fasthooks.transcript.entries import (
     AssistantMessage,
     CompactBoundary,
-    Entry,
     FileHistorySnapshot,
+    MessageEntry,
     SystemEntry,
     TranscriptEntry,
     UserMessage,
@@ -58,7 +58,7 @@ class Transcript:
         # Indexes for fast lookups
         self._tool_use_index: dict[str, ToolUseBlock] = {}
         self._tool_result_index: dict[str, ToolResultBlock] = {}
-        self._uuid_index: dict[str, Entry] = {}
+        self._uuid_index: dict[str, MessageEntry] = {}
         self._request_id_index: dict[str, list[AssistantMessage]] = {}
         self._snapshot_index: dict[str, FileHistorySnapshot] = {}
 
@@ -130,7 +130,7 @@ class Transcript:
     def _index_entry(self, entry: TranscriptEntry) -> None:
         """Add entry to lookup indexes."""
         # UUID index (only for Entry subclasses)
-        if isinstance(entry, Entry) and entry.uuid:
+        if isinstance(entry, MessageEntry) and entry.uuid:
             self._uuid_index[entry.uuid] = entry
 
         # Tool use/result indexes + request_id index
@@ -163,21 +163,24 @@ class Transcript:
         """Find ToolResultBlock by tool_use_id."""
         return self._tool_result_index.get(tool_use_id)
 
-    def find_by_uuid(self, uuid: str) -> Entry | None:
-        """Find entry by UUID (searches both current and archived)."""
+    def find_by_uuid(self, uuid: str) -> MessageEntry | None:
+        """Find entry by UUID (searches both current and archived).
+
+        Only graph records (MessageEntry) carry a uuid, so the result is one.
+        """
         return self._uuid_index.get(uuid)
 
     def find_snapshot(self, message_id: str) -> FileHistorySnapshot | None:
         """Find file history snapshot by message_id."""
         return self._snapshot_index.get(message_id)
 
-    def get_parent(self, entry: Entry) -> Entry | None:
+    def get_parent(self, entry: MessageEntry) -> MessageEntry | None:
         """Get parent entry via parent_uuid (searches both current and archived)."""
         if entry.parent_uuid:
             return self.find_by_uuid(entry.parent_uuid)
         return None
 
-    def get_logical_parent(self, entry: Entry) -> Entry | None:
+    def get_logical_parent(self, entry: MessageEntry) -> MessageEntry | None:
         """Get logical parent, handling compact boundaries.
 
         For CompactBoundary entries, returns the entry referenced by
@@ -189,8 +192,8 @@ class Transcript:
         return self.get_parent(entry)
 
     def get_children(
-        self, entry: Entry, include_archived: bool | None = None
-    ) -> list[Entry]:
+        self, entry: MessageEntry, include_archived: bool | None = None
+    ) -> list[MessageEntry]:
         """Get all entries with this entry as parent.
 
         Args:
@@ -202,7 +205,7 @@ class Transcript:
 
         source = self._archived + self.entries if include_archived else self.entries
         return [
-            e for e in source if isinstance(e, Entry) and e.parent_uuid == entry.uuid
+            e for e in source if isinstance(e, MessageEntry) and e.parent_uuid == entry.uuid
         ]
 
     def get_entries_by_request_id(self, request_id: str) -> list[AssistantMessage]:
@@ -373,7 +376,7 @@ class Transcript:
 
         source = self._get_source(include_archived)
         # Use UUIDs for membership check (entries aren't hashable)
-        source_uuids = {e.uuid for e in source if isinstance(e, Entry) and e.uuid}
+        source_uuids = {e.uuid for e in source if isinstance(e, MessageEntry) and e.uuid}
 
         result = []
         seen: set[str] = set()
@@ -445,7 +448,7 @@ class Transcript:
             self._archived = archived_snapshot
             raise
 
-    def remove(self, entry: Entry, relink: bool = True) -> None:
+    def remove(self, entry: MessageEntry, relink: bool = True) -> None:
         """Remove entry from transcript.
 
         Args:
@@ -459,13 +462,13 @@ class Transcript:
         if relink:
             # Relink children to entry's parent
             for e in self.entries:
-                if isinstance(e, Entry) and e.parent_uuid == entry.uuid:
+                if isinstance(e, MessageEntry) and e.parent_uuid == entry.uuid:
                     e.parent_uuid = entry.parent_uuid
 
         self.entries.remove(entry)
         self._remove_from_indexes(entry)
 
-    def remove_tree(self, entry: Entry) -> list[Entry]:
+    def remove_tree(self, entry: MessageEntry) -> list[MessageEntry]:
         """Remove entry and all descendants.
 
         Returns list of removed entries.
@@ -483,7 +486,7 @@ class Transcript:
                 children = [
                     e
                     for e in self.entries
-                    if isinstance(e, Entry) and e.parent_uuid == current.uuid
+                    if isinstance(e, MessageEntry) and e.parent_uuid == current.uuid
                 ]
                 to_remove.extend(children)
                 self.entries.remove(current)
@@ -492,7 +495,7 @@ class Transcript:
 
         return removed
 
-    def insert(self, index: int, entry: Entry) -> None:
+    def insert(self, index: int, entry: MessageEntry) -> None:
         """Insert entry at position, rewiring parent_uuid chain.
 
         The new entry's parent_uuid is set to the previous entry's uuid.
@@ -504,7 +507,7 @@ class Transcript:
         # Set new entry's parent
         if index > 0:
             prev_entry = self.entries[index - 1]
-            if isinstance(prev_entry, Entry):
+            if isinstance(prev_entry, MessageEntry):
                 entry.parent_uuid = prev_entry.uuid
         else:
             # Inserting at start - explicitly set no parent
@@ -513,26 +516,26 @@ class Transcript:
         # Relink the entry that will follow
         if index < len(self.entries):
             next_entry = self.entries[index]
-            if isinstance(next_entry, Entry):
+            if isinstance(next_entry, MessageEntry):
                 next_entry.parent_uuid = entry.uuid
 
         self.entries.insert(index, entry)
         self._index_entry(entry)
 
-    def append(self, entry: Entry) -> None:
+    def append(self, entry: MessageEntry) -> None:
         """Add entry to end of transcript.
 
         Sets parent_uuid to last entry's uuid.
         """
         if self.entries:
             last = self.entries[-1]
-            if isinstance(last, Entry):
+            if isinstance(last, MessageEntry):
                 entry.parent_uuid = last.uuid
 
         self.entries.append(entry)
         self._index_entry(entry)
 
-    def replace(self, old: Entry, new: Entry) -> None:
+    def replace(self, old: MessageEntry, new: MessageEntry) -> None:
         """Replace entry, preserving position in chain.
 
         The new entry inherits old's parent_uuid.
@@ -546,7 +549,7 @@ class Transcript:
 
         # Relink children
         for e in self.entries:
-            if isinstance(e, Entry) and e.parent_uuid == old.uuid:
+            if isinstance(e, MessageEntry) and e.parent_uuid == old.uuid:
                 e.parent_uuid = new.uuid
 
         self.entries[idx] = new
@@ -555,7 +558,7 @@ class Transcript:
 
     def _remove_from_indexes(self, entry: TranscriptEntry) -> None:
         """Remove entry from lookup indexes."""
-        if isinstance(entry, Entry) and entry.uuid:
+        if isinstance(entry, MessageEntry) and entry.uuid:
             self._uuid_index.pop(entry.uuid, None)
 
         if isinstance(entry, AssistantMessage):

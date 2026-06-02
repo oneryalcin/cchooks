@@ -233,20 +233,24 @@ class Transcript:
 ### Entry Types
 
 ```
-TranscriptEntry (union type)
-├── UserMessage         # User input
-├── AssistantMessage    # Claude response (may contain tool_use blocks)
-├── SystemEntry         # System messages, summaries
-└── FileHistorySnapshot # File state snapshots (not an Entry subclass)
+Entry                       # base: any JSONL record (type, to_dict)
+├── MessageEntry            # graph record (uuid, parent_uuid, session meta)
+│   ├── UserMessage         # User input
+│   ├── AssistantMessage    # Claude response (may contain tool_use blocks)
+│   └── SystemEntry         # System messages, summaries
+└── FileHistorySnapshot     # File state snapshots (Entry, but NOT a MessageEntry)
 ```
+
+`isinstance(e, MessageEntry)` is the "is a graph record" discriminator;
+`FileHistorySnapshot` is excluded because it has no uuid/parent.
 
 ### Indexing
 
 Transcript maintains indexes for fast lookups:
 
 ```python
-self._by_uuid: dict[str, Entry] = {}           # UUID → Entry
-self._children: dict[str, list[Entry]] = {}    # parent_uuid → children
+self._by_uuid: dict[str, MessageEntry] = {}        # UUID → graph record
+self._children: dict[str, list[MessageEntry]] = {} # parent_uuid → children
 ```
 
 ---

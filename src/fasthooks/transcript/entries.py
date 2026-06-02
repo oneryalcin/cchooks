@@ -22,7 +22,15 @@ if TYPE_CHECKING:
 
 
 class Entry(BaseModel):
-    """Base class for all transcript entries."""
+    """Base for *any* JSONL stream record — messages and bookkeeping alike.
+
+    Holds only what every record shares: the ``type`` discriminator, the internal
+    line number, and JSONL (de)serialization. The conversation-graph fields
+    (uuid, parent_uuid, session metadata) live on :class:`MessageEntry`, so a
+    non-message record like :class:`FileHistorySnapshot` does not inherit — and
+    therefore does not re-serialize — a dozen empty ``uuid``/``sessionId``/``cwd``
+    fields it never had on the wire.
+    """
 
     model_config = ConfigDict(
         extra="allow",  # Preserve unknown fields
@@ -31,17 +39,6 @@ class Entry(BaseModel):
     )
 
     type: str = ""
-    uuid: str = ""
-    parent_uuid: str | None = Field(default=None, alias="parentUuid")
-    timestamp: datetime | None = None
-    session_id: str = Field(default="", alias="sessionId")
-    cwd: str = ""
-    version: str = ""
-    git_branch: str = Field(default="", alias="gitBranch")
-    is_sidechain: bool = Field(default=False, alias="isSidechain")
-    user_type: str = Field(default="", alias="userType")
-    slug: str = ""
-    is_synthetic: bool = Field(default=False, alias="isSynthetic")
 
     # Internal tracking
     _line_number: int | None = None
@@ -58,7 +55,34 @@ class Entry(BaseModel):
         return data
 
 
-class UserMessage(Entry):
+class MessageEntry(Entry):
+    """A record that participates in the conversation graph.
+
+    It carries ``uuid``/``parent_uuid`` plus the session metadata used to link
+    entries into a tree. Despite the name this is broader than "chat message":
+    :class:`UserMessage`, :class:`AssistantMessage`, :class:`SystemEntry` (and its
+    subtypes), and unknown-but-graph-shaped records are all ``MessageEntry``.
+
+    The ``isinstance(e, MessageEntry)`` discriminator therefore means "has graph
+    identity" — exactly what separates these from :class:`FileHistorySnapshot`,
+    which is a bare bookkeeping record with no uuid/parent. Do not re-narrow this
+    to "is a chat message" by name; that reintroduces the bug this layer fixes.
+    """
+
+    uuid: str = ""
+    parent_uuid: str | None = Field(default=None, alias="parentUuid")
+    timestamp: datetime | None = None
+    session_id: str = Field(default="", alias="sessionId")
+    cwd: str = ""
+    version: str = ""
+    git_branch: str = Field(default="", alias="gitBranch")
+    is_sidechain: bool = Field(default=False, alias="isSidechain")
+    user_type: str = Field(default="", alias="userType")
+    slug: str = ""
+    is_synthetic: bool = Field(default=False, alias="isSynthetic")
+
+
+class UserMessage(MessageEntry):
     """User's input to Claude."""
 
     type: Literal["user"] = "user"
@@ -110,8 +134,8 @@ class UserMessage(Entry):
         cls,
         content: str,
         *,
-        parent: Entry | None = None,
-        context: Entry | None = None,
+        parent: MessageEntry | None = None,
+        context: MessageEntry | None = None,
         cwd: str | None = None,
         session_id: str | None = None,
         **overrides: Any,
@@ -140,7 +164,7 @@ class UserMessage(Entry):
         }
 
         # Copy metadata from context (only if it's an Entry with these fields)
-        if ctx and isinstance(ctx, Entry):
+        if ctx and isinstance(ctx, MessageEntry):
             data["session_id"] = ctx.session_id
             data["cwd"] = ctx.cwd
             data["version"] = ctx.version
@@ -223,7 +247,7 @@ class UserMessage(Entry):
         return instance
 
 
-class AssistantMessage(Entry):
+class AssistantMessage(MessageEntry):
     """Claude's response."""
 
     type: Literal["assistant"] = "assistant"
@@ -288,8 +312,8 @@ class AssistantMessage(Entry):
         cls,
         content: str | list[ContentBlock],
         *,
-        parent: Entry | None = None,
-        context: Entry | None = None,
+        parent: MessageEntry | None = None,
+        context: MessageEntry | None = None,
         model: str = "synthetic",
         stop_reason: str = "end_turn",
         cwd: str | None = None,
@@ -323,7 +347,7 @@ class AssistantMessage(Entry):
         }
 
         # Copy metadata from context (only if it's an Entry with these fields)
-        if ctx and isinstance(ctx, Entry):
+        if ctx and isinstance(ctx, MessageEntry):
             data["session_id"] = ctx.session_id
             data["cwd"] = ctx.cwd
             data["version"] = ctx.version
@@ -416,7 +440,7 @@ class AssistantMessage(Entry):
         return instance
 
 
-class SystemEntry(Entry):
+class SystemEntry(MessageEntry):
     """System events and metadata."""
 
     type: Literal["system"] = "system"
@@ -446,26 +470,23 @@ class StopHookSummary(SystemEntry):
     tool_use_id: str = Field(default="", alias="toolUseID")
 
 
-class FileHistorySnapshot(BaseModel):
-    """Tracks file backups for undo capability. Not a message entry."""
-
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
+class FileHistorySnapshot(Entry):
+    """Tracks file backups for undo capability. A bookkeeping record, *not* a
+    message: it has no uuid/parent and never participates in the conversation
+    graph. Extends :class:`Entry` (not :class:`MessageEntry`) so it reuses the
+    shared config/``_line_number``/``to_dict`` without inheriting graph fields.
+    """
 
     type: Literal["file-history-snapshot"] = "file-history-snapshot"
     message_id: str = Field(default="", alias="messageId")
     snapshot: dict[str, Any] = Field(default_factory=dict)
     is_snapshot_update: bool = Field(default=False, alias="isSnapshotUpdate")
 
-    _line_number: int | None = None
 
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize to dict for JSONL output."""
-        data = self.model_dump(by_alias=True, exclude_none=True, mode="json")
-        data.pop("_line_number", None)
-        return data
-
-
-# Type alias for all entry types
+# Type alias for all entry types. MessageEntry is the catch-all: parse_entry
+# returns it for unknown types (an unrecognized record still links into the
+# graph), and FileHistorySnapshot is the one non-message record. A bare Entry is
+# never produced, so it is not a member.
 TranscriptEntry = (
     UserMessage
     | AssistantMessage
@@ -473,7 +494,7 @@ TranscriptEntry = (
     | CompactBoundary
     | StopHookSummary
     | FileHistorySnapshot
-    | Entry  # Fallback for unknown types
+    | MessageEntry  # Fallback for unknown graph-shaped records
 )
 
 
@@ -498,5 +519,7 @@ def parse_entry(
     elif entry_type == "file-history-snapshot":
         return FileHistorySnapshot.model_validate(data)
     else:
-        # Unknown type - return base Entry
-        return Entry.model_validate(data)
+        # Unknown type. Treat it as a graph record (MessageEntry, not bare Entry):
+        # an unrecognized stream record that carries uuid/parentUuid should still
+        # link into the conversation graph, matching pre-#25 behavior.
+        return MessageEntry.model_validate(data)

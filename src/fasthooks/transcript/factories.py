@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 from fasthooks.transcript.blocks import ToolResultBlock, ToolUseBlock
-from fasthooks.transcript.entries import AssistantMessage, Entry, UserMessage
+from fasthooks.transcript.entries import AssistantMessage, MessageEntry, UserMessage
 
 if TYPE_CHECKING:
     from fasthooks.transcript.core import Transcript
@@ -50,28 +50,28 @@ def inject_tool_result(
     # Generate matching tool_use_id
     tool_use_id = f"toolu_{secrets.token_hex(12)}"
 
-    # Get context entry for metadata (find last Entry, skip FileHistorySnapshot etc.)
-    context: Entry | None = None
+    # Get context entry for metadata (last message, skip FileHistorySnapshot etc.)
+    context: MessageEntry | None = None
     for e in reversed(transcript.entries):
-        if isinstance(e, Entry):
+        if isinstance(e, MessageEntry):
             context = e
             break
 
-    # Determine insertion position and parent. The parent must be a real
-    # message Entry (we read parent.uuid); records like FileHistorySnapshot
-    # are not Entry instances and carry no uuid, so we skip them.
-    parent: Entry | None
+    # Determine insertion position and parent. The parent must be a graph record
+    # (we read parent.uuid); records like FileHistorySnapshot are not
+    # MessageEntry instances and carry no uuid, so we skip them.
+    parent: MessageEntry | None
     if position == "start":
         insert_idx = 0
         parent = None
     elif position == "end":
         insert_idx = len(transcript.entries)
         prev = transcript.entries[-1] if transcript.entries else None
-        parent = prev if isinstance(prev, Entry) else None
+        parent = prev if isinstance(prev, MessageEntry) else None
     else:
         insert_idx = position
         prev = transcript.entries[insert_idx - 1] if insert_idx > 0 else None
-        parent = prev if isinstance(prev, Entry) else None
+        parent = prev if isinstance(prev, MessageEntry) else None
 
     # Create assistant message with tool use
     tool_use = ToolUseBlock(id=tool_use_id, name=tool_name, input=tool_input)

@@ -7,8 +7,8 @@ import pytest
 from fasthooks.transcript import (
     AssistantMessage,
     CompactBoundary,
-    Entry,
     FileHistorySnapshot,
+    MessageEntry,
     StopHookSummary,
     SystemEntry,
     TextBlock,
@@ -289,6 +289,29 @@ class TestEntries:
         assert entry.message_id == "msg-123"
         assert entry.is_snapshot_update is True
 
+    def test_file_history_snapshot_roundtrip_has_no_graph_fields(self):
+        """A snapshot must not gain conversation-graph fields it never had.
+
+        FileHistorySnapshot is an Entry (shares config/to_dict) but NOT a
+        MessageEntry, so it carries no uuid/parent/session metadata. If those
+        fields ever leaked onto it (the naive "snapshot extends the graph base"
+        design), to_dict would serialize a dozen empty uuid/sessionId/cwd fields
+        and pollute the JSONL round-trip. Lock the field-placement decision.
+        """
+        data = {
+            "type": "file-history-snapshot",
+            "messageId": "msg-123",
+            "snapshot": {"trackedFileBackups": {}},
+            "isSnapshotUpdate": True,
+        }
+        out = parse_entry(data).to_dict()
+
+        assert out == data  # exact round-trip, nothing added
+        for graph_field in ("uuid", "parentUuid", "sessionId", "cwd", "isSidechain"):
+            assert graph_field not in out
+        # ...and the type really isn't a graph record.
+        assert not isinstance(parse_entry(data), MessageEntry)
+
     def test_field_aliases(self):
         """Field aliases (camelCase -> snake_case) should work."""
         data = {
@@ -376,7 +399,7 @@ class TestTranscriptLoading:
         # Find any entry with UUID
         all_entries = list(t.entries) + list(t.archived)
         for entry in all_entries:
-            if isinstance(entry, Entry) and entry.uuid:
+            if isinstance(entry, MessageEntry) and entry.uuid:
                 found = t.find_by_uuid(entry.uuid)
                 assert found is not None
                 assert found.uuid == entry.uuid
@@ -407,7 +430,7 @@ class TestSidechainLoading:
 
         # Should have is_sidechain=True
         for entry in t.entries:
-            if isinstance(entry, Entry):
+            if isinstance(entry, MessageEntry):
                 assert entry.is_sidechain is True
 
 
@@ -838,7 +861,7 @@ class TestCRUDOperations:
     def test_insert_rewires_chain(self, transcript_with_chain):
         """Insert should rewire parent_uuid chain."""
         t = transcript_with_chain
-        new_entry = Entry(type="system", uuid="s1")
+        new_entry = MessageEntry(type="system", uuid="s1")
         t.insert(1, new_entry)
 
         assert len(t.entries) == 5
@@ -849,7 +872,7 @@ class TestCRUDOperations:
     def test_insert_at_start(self, transcript_with_chain):
         """Insert at index 0 should have no parent."""
         t = transcript_with_chain
-        new_entry = Entry(type="system", uuid="s0")
+        new_entry = MessageEntry(type="system", uuid="s0")
         t.insert(0, new_entry)
 
         assert new_entry.parent_uuid is None
@@ -859,7 +882,7 @@ class TestCRUDOperations:
     def test_append_sets_parent(self, transcript_with_chain):
         """Append should set parent to last entry."""
         t = transcript_with_chain
-        new_entry = Entry(type="user", uuid="u3")
+        new_entry = MessageEntry(type="user", uuid="u3")
         t.append(new_entry)
 
         assert len(t.entries) == 5
@@ -869,7 +892,7 @@ class TestCRUDOperations:
         """Replace should preserve chain position."""
         t = transcript_with_chain
         old = t.find_by_uuid("a1")
-        new = Entry(type="system", uuid="replacement")
+        new = MessageEntry(type="system", uuid="replacement")
         t.replace(old, new)
 
         assert t.find_by_uuid("a1") is None
@@ -883,7 +906,7 @@ class TestCRUDOperations:
         path = t.path
 
         # Modify
-        new_entry = Entry(type="system", uuid="added")
+        new_entry = MessageEntry(type="system", uuid="added")
         t.append(new_entry)
         t.save()
 
@@ -921,7 +944,7 @@ class TestCRUDOperations:
         """Insert at index 0 should set parent_uuid to None."""
         t = transcript_with_chain
         # Create entry with existing parent_uuid
-        new_entry = Entry(type="system", uuid="s0", parent_uuid="stale_parent")
+        new_entry = MessageEntry(type="system", uuid="s0", parent_uuid="stale_parent")
         t.insert(0, new_entry)
 
         assert new_entry.parent_uuid is None  # Should be cleared
