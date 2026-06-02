@@ -20,7 +20,6 @@ from fasthooks.transcript.entries import (
 )
 
 if TYPE_CHECKING:
-    from fasthooks.transcript.query import TranscriptQuery
     from fasthooks.transcript.turn import Turn
 
 
@@ -229,37 +228,6 @@ class Transcript:
             if entry.is_meta or entry.is_visible_in_transcript_only:
                 return False
         return True
-
-    def query(
-        self,
-        include_archived: bool | None = None,
-        include_meta: bool | None = None,
-    ) -> TranscriptQuery:
-        """Start a fluent query on transcript entries.
-
-        Returns a TranscriptQuery that supports chaining:
-            transcript.query().filter(type="assistant").first()
-            transcript.query().assistants().with_tools().count()
-
-        Args:
-            include_archived: Include archived entries. Defaults to self.include_archived.
-            include_meta: Include meta entries. Defaults to self.include_meta.
-
-        Returns:
-            TranscriptQuery for fluent chaining
-        """
-        from fasthooks.transcript.query import TranscriptQuery
-
-        # Get source entries
-        entries = self._get_source(include_archived)
-
-        # Apply meta filtering (consistent with other views)
-        if include_meta is None:
-            include_meta = self.include_meta
-        if not include_meta:
-            entries = [e for e in entries if self._filter_meta(e)]
-
-        return TranscriptQuery(entries)
 
     @property
     def archived(self) -> list[TranscriptEntry]:

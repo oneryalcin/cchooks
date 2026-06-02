@@ -106,45 +106,37 @@ transcript.errors       # Tool results where is_error=True
 transcript.turns        # List[Turn] - grouped by requestId
 ```
 
-### Fluent Query API
+### Filtering
 
-Inspired by Django ORM and Tidyverse:
-
-```python
-# Type shortcuts
-transcript.query().users().all()
-transcript.query().assistants().with_tools().all()
-
-# Filtering
-transcript.query().filter(type="assistant").all()
-transcript.query().filter(text__contains="error").all()
-transcript.query().where(lambda e: e.has_tool_use).all()
-
-# Lookups
-transcript.query().filter(timestamp__gt=datetime(2024, 1, 1)).all()
-transcript.query().filter(type__in=["user", "assistant"]).all()
-
-# Ordering
-transcript.query().order_by("-timestamp").limit(10).all()
-
-# Terminals
-transcript.query().assistants().count()     # int
-transcript.query().with_errors().exists()   # bool
-transcript.query().filter(uuid="abc").one() # single entry or ValueError
-```
-
-### Time-based Queries
+The pre-built views above return plain lists of typed entries, so filter, sort,
+and slice them with ordinary Python — no query DSL to learn, and full editor
+autocomplete and type-checking on every attribute:
 
 ```python
 from datetime import datetime
 
-# Entries since timestamp
-transcript.query().since(datetime(2024, 1, 1)).all()
-transcript.query().since("2024-01-01T00:00:00").all()
+# Filter on typed attributes / properties
+errored = [m for m in transcript.assistant_messages if not m.stop_reason]
+with_tools = [m for m in transcript.assistant_messages if m.has_tool_use]
+recent = [e for e in transcript.all_entries
+          if e.timestamp and e.timestamp > datetime(2024, 1, 1)]
 
-# Entries until timestamp
-transcript.query().until(datetime.now()).all()
+# Sort + take the last 10
+latest = sorted(
+    transcript.assistant_messages,
+    key=lambda m: m.timestamp or datetime.min,
+)[-10:]
+
+# Aggregate with the standard library
+from collections import Counter
+tool_counts = Counter(tu.name for tu in transcript.tool_uses)
+total_out = sum(m.usage.get("output_tokens", 0) for m in transcript.assistant_messages)
+
+# Look up by uuid
+entry = transcript.find_by_uuid("abc-123")
 ```
+
+For session-wide totals, prefer `transcript.stats` (see below).
 
 ## Creating Entries
 

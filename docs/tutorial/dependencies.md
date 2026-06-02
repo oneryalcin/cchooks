@@ -63,7 +63,8 @@ Quick overview:
 
 | Feature | Example |
 |---------|---------|
-| Query entries | `transcript.query().assistants().with_tools().all()` |
+| Typed views | `transcript.assistant_messages`, `transcript.tool_uses` |
+| Filter | `[m for m in transcript.assistant_messages if m.has_tool_use]` |
 | Statistics | `transcript.stats.input_tokens` |
 | Create entries | `UserMessage.create("reminder", context=entry)` |
 | Inject tool results | `inject_tool_result(transcript, "Bash", {...}, "output")` |
@@ -152,9 +153,9 @@ def check_budget(event, transcript: Transcript):
 ```python
 @app.pre_tool("Bash")
 def no_repeated_failures(event, transcript: Transcript):
-    # Query recent Bash tool uses
-    recent = transcript.query().tool_uses("Bash").last(5).all()
-    recent_commands = [e.tool_input.get("command") for e in recent]
+    # Recent Bash commands (last 5)
+    bash_uses = [tu for tu in transcript.tool_uses if tu.name == "Bash"][-5:]
+    recent_commands = [tu.input.get("command") for tu in bash_uses]
     if event.command in recent_commands:
         return deny("This command was already tried recently")
 ```
