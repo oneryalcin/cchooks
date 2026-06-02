@@ -1,11 +1,21 @@
 """Recipes: engine behavior, scaffolding, and fail-open discovery."""
 from __future__ import annotations
 
+import json
+
 from rich.console import Console
 
 from fasthooks import HookApp
-from fasthooks.recipes import include_recipes, kill_switch, scaffold_for, steer
-from fasthooks.testing import TestClient
+from fasthooks.recipes import (
+    evaluator_gate,
+    evidence_gate,
+    heartbeat,
+    include_recipes,
+    kill_switch,
+    scaffold_for,
+    steer,
+)
+from fasthooks.testing import MockEvent, TestClient
 
 
 def _pre_tool(cwd: str) -> dict:
@@ -50,13 +60,116 @@ def test_steer_injects_then_clears(tmp_path):
     assert not steer_file.exists()  # delivered exactly once
 
 
+def test_evidence_gate_requires_evidence_read_before_results_write(tmp_path):
+    """Default-FAIL: the results file can't be written until evidence is Read.
+
+    Needs a real state_dir — the read tracked in one hook invocation must be
+    visible to the write gate in the next (separate process in production).
+    """
+    app = HookApp(state_dir=str(tmp_path))
+    app.include(evidence_gate(results_file="test-results.json"))
+    c = TestClient(app)
+
+    # 1. write without evidence -> denied
+    r = c.send(MockEvent.write("test-results.json", "{}"))
+    assert r is not None and r.decision == "deny"
+
+    # 2. read a screenshot (evidence) -> the next write is allowed
+    c.send(MockEvent.read("screenshots/feature-1.png"))
+    assert c.send(MockEvent.write("test-results.json", "{}")) is None
+
+    # 3. evidence consumed -> the following write is denied again
+    assert c.send(MockEvent.write("test-results.json", "{}")).decision == "deny"
+
+    # 4. a non-results write is never gated
+    assert c.send(MockEvent.write("src/app.py", "x = 1")) is None
+
+    # 5. a non-evidence read (no screenshot/console marker) does not unlock
+    c.send(MockEvent.read("README.md"))
+    assert c.send(MockEvent.write("test-results.json", "{}")).decision == "deny"
+
+
+def _evaluator_stub(tmp_path, verdict_body: str) -> str:
+    script = tmp_path / "ev.sh"
+    script.write_text(f"#!/usr/bin/env bash\n{verdict_body}\n")
+    script.chmod(0o755)
+    return str(script)
+
+
+def test_evaluator_gate_blocks_stop_on_non_pass(tmp_path):
+    app = HookApp()
+    cmd = _evaluator_stub(tmp_path, 'echo NEEDS_WORK; echo "missing screenshot"')
+    app.include(evaluator_gate(command=cmd))
+    r = TestClient(app).send(MockEvent.stop(cwd=str(tmp_path)))
+    assert r is not None and r.decision == "block"
+    assert "NEEDS_WORK" in r.reason and "missing screenshot" in r.reason
+
+
+def test_evaluator_gate_allows_stop_on_pass(tmp_path):
+    app = HookApp()
+    app.include(evaluator_gate(command=_evaluator_stub(tmp_path, "echo PASS")))
+    assert TestClient(app).send(MockEvent.stop(cwd=str(tmp_path))) is None
+
+
+def test_evaluator_gate_fails_open_when_evaluator_missing(tmp_path):
+    """A missing/broken evaluator must never wedge the session — allow the stop."""
+    app = HookApp()
+    app.include(evaluator_gate(command="fasthooks-no-such-binary-xyz"))
+    assert TestClient(app).send(MockEvent.stop(cwd=str(tmp_path))) is None
+
+
+def test_evaluator_gate_recursion_guard(tmp_path, monkeypatch):
+    """An evaluation must not trigger another: the sentinel env short-circuits."""
+    monkeypatch.setenv("FASTHOOKS_EVALUATOR_GATE_ACTIVE", "1")
+    app = HookApp()
+    app.include(evaluator_gate(command=_evaluator_stub(tmp_path, "echo NEEDS_WORK")))
+    assert TestClient(app).send(MockEvent.stop(cwd=str(tmp_path))) is None
+
+
+def test_evaluator_gate_fails_open_on_nonzero_exit(tmp_path):
+    """A non-zero exit (e.g. unauthenticated `claude`) is an infra failure, not a
+    NEEDS_WORK verdict — fail open, don't wedge Stop with a bogus block."""
+    app = HookApp()
+    # exits 1 with no stdout — like an auth/config error
+    cmd = _evaluator_stub(tmp_path, 'echo "auth error" >&2; exit 1')
+    app.include(evaluator_gate(command=cmd))
+    assert TestClient(app).send(MockEvent.stop(cwd=str(tmp_path))) is None
+
+
+def test_evidence_gate_fails_open_without_persistent_state(tmp_path, capsys):
+    """With the default HookApp() (NullState), the gate can't persist evidence
+    across processes — so it must fail OPEN (allow + warn), not deadlock."""
+    app = HookApp()  # no state_dir -> NullState
+    app.include(evidence_gate(results_file="test-results.json"))
+    c = TestClient(app)
+    # No evidence read; with real State this would deny. Here it must allow.
+    assert c.send(MockEvent.write("test-results.json", "{}")) is None
+    assert "inert" in capsys.readouterr().err
+
+
+def test_heartbeat_writes_marker_and_is_passive(tmp_path):
+    app = HookApp()
+    app.include(heartbeat(path="hb.json"))
+    r = TestClient(app).send(MockEvent.bash("ls", cwd=str(tmp_path)))
+    assert r is None  # passive — never affects the decision
+
+    marker = tmp_path / "hb.json"
+    assert marker.exists()
+    data = json.loads(marker.read_text())
+    assert data["tool"] == "Bash" and data["ts"] > 0
+
+
 # ── Scaffolding ──────────────────────────────────────────────────────────────
 
 
 def test_scaffold_default_is_derived_from_engine(tmp_path):
-    # Guards against the scaffold's default drifting from the factory default.
+    # Guards against the scaffold's default (and knob name) drifting from the
+    # factory signature.
     assert 'kill_switch(sentinel="AGENT_STOP")' in scaffold_for("kill-switch")
     assert 'steer(sentinel="STEER.md")' in scaffold_for("steer")
+    assert 'evidence_gate(results_file="test-results.json")' in scaffold_for("evidence-gate")
+    # evaluator-gate's default embeds a quoted prompt — the scaffold must stay valid Python.
+    compile(scaffold_for("evaluator-gate"), "<scaffold>", "exec")
 
 
 # ── Discovery ────────────────────────────────────────────────────────────────
