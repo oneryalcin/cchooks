@@ -113,16 +113,19 @@ Run tests:
 pytest test_hooks.py -v
 ```
 
-## CLI Testing
+## CLI Smoke Test
 
-You can also test via the CLI:
+For a quick manual check (no test file needed), run a hook against a synthetic
+event with `fasthooks test`:
 
 ```bash
-# Generate test event
-fasthooks example bash_dangerous > event.json
-
-# Run hook and check output
-fasthooks run hooks.py --input event.json
+fasthooks test .claude/hooks.py --event PreToolUse:Bash --input '{"command": "rm -rf /"}'
 ```
 
-This outputs the JSON response directly, useful for quick manual testing.
+It builds a valid hook-event envelope, runs the hook the way Claude Code does
+(stdin → hook → stdout/exit code), and reports the outcome — the decision JSON, a
+block (exit 2), or "allowed". `--event` accepts `Name` or `Name:Tool` (e.g.
+`Stop`, `PostToolUse:Edit`); `--input` is the `tool_input` JSON (or `@file.json`).
+
+This is a smoke test, not your test suite — for thorough tests use `TestClient`
+and `MockEvent` as shown above.

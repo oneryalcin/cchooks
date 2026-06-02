@@ -317,6 +317,32 @@ See the [Observability Guide](observability.md) for more details.
 
 ---
 
+### fasthooks test
+
+Run a hook file against a synthetic event — a quick smoke test, **not** your
+pytest suite. It builds a hook-event envelope and runs the file the way Claude
+Code does (stdin → hook → stdout/exit code), then reports the outcome.
+
+```bash
+fasthooks test <path> [--event NAME[:TOOL]] [--input JSON]
+```
+
+```bash
+# Does the hook block a dangerous command?
+fasthooks test .claude/hooks.py --event PreToolUse:Bash --input '{"command": "rm -rf /"}'
+# → shows the deny decision, a block (exit 2), or "allowed"
+
+# Other events; --input may be inline JSON or @file.json
+fasthooks test .claude/hooks.py -e Stop
+fasthooks test .claude/hooks.py -e PostToolUse:Edit -i @sample_input.json
+```
+
+`--event` defaults to `PreToolUse:Bash`. The command exits 0 whenever the hook
+ran (allow *or* block are both valid outcomes); non-zero only on a harness error
+(missing file, bad JSON, timeout, hook crash).
+
+---
+
 ## Scopes
 
 fasthooks supports three installation scopes:
@@ -447,18 +473,11 @@ Future CLI commands planned for v2:
 | Command | Description |
 |---------|-------------|
 | `fasthooks show-config` | Output settings.json snippet without writing (for CI/CD, debugging) |
-| `fasthooks test` | Run hooks locally with mock events (quick smoke tests) |
 
 **show-config** - Preview what `install` would write:
 ```bash
 fasthooks show-config .claude/hooks.py
 # Outputs JSON to stdout, doesn't modify any files
-```
-
-**test** - Test handlers without Claude Code:
-```bash
-fasthooks test .claude/hooks.py --event PreToolUse:Bash --input '{"command": "rm -rf /"}'
-# Output: {"decision": "deny", "reason": "Dangerous command blocked"}
 ```
 
 Have a feature request? [Open an issue](https://github.com/oneryalcin/fasthooks/issues).

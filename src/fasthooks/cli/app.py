@@ -186,6 +186,35 @@ def add(
 
 
 @app.command()
+def test(
+    hook_file: Annotated[
+        str,
+        typer.Argument(help="Path to the hook file, e.g. .claude/hooks.py"),
+    ],
+    event: Annotated[
+        str,
+        typer.Option(
+            "--event",
+            "-e",
+            help="Event to send: 'PreToolUse:Bash', 'PostToolUse:Edit', 'Stop', ...",
+        ),
+    ] = "PreToolUse:Bash",
+    input_raw: Annotated[
+        str | None,
+        typer.Option(
+            "--input",
+            "-i",
+            help="tool_input as JSON (or @file.json)",
+        ),
+    ] = None,
+) -> None:
+    """Run a hook file against a synthetic event (quick smoke test — not your pytest suite)."""
+    from fasthooks.cli.commands.smoke import run_smoke
+
+    raise typer.Exit(code=run_smoke(hook_file, event, input_raw, console))
+
+
+@app.command()
 def serve(
     path: Annotated[
         str,
