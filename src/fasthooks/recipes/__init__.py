@@ -20,6 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from fasthooks.recipes.commit_on_stop import commit_on_stop
 from fasthooks.recipes.evaluator_gate import evaluator_gate
 from fasthooks.recipes.evidence_gate import evidence_gate
 from fasthooks.recipes.heartbeat import heartbeat
@@ -36,6 +37,7 @@ __all__ = [
     "evidence_gate",
     "evaluator_gate",
     "heartbeat",
+    "commit_on_stop",
     "RECIPES",
     "scaffold_for",
     "include_recipes",
@@ -98,6 +100,15 @@ RECIPES: dict[str, RecipeSpec] = {
             "watchdog/dashboard can detect stalls. Passive (never blocks). If "
             "you run the SQLiteObserver/studio you already have timestamps "
             "there; this is the no-DB, tail-from-a-terminal alternative."
+        ),
+    ),
+    "commit-on-stop": RecipeSpec(
+        factory=commit_on_stop,
+        summary="Auto-commit tracked changes at session end (durability backstop).",
+        doc=(
+            "On Stop, `git commit -am '<message_prefix>: <timestamp>'` when there "
+            "are tracked changes. Passive backstop (never blocks, fails silent); "
+            "untracked files are left for the agent to `git add`."
         ),
     ),
 }

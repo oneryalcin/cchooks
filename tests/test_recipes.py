@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import json
+import subprocess
 
 from rich.console import Console
 
 from fasthooks import HookApp
 from fasthooks.recipes import (
+    commit_on_stop,
     evaluator_gate,
     evidence_gate,
     heartbeat,
@@ -157,6 +159,48 @@ def test_heartbeat_writes_marker_and_is_passive(tmp_path):
     assert marker.exists()
     data = json.loads(marker.read_text())
     assert data["tool"] == "Bash" and data["ts"] > 0
+
+
+def _git_repo(tmp_path):
+    def git(*a):
+        return subprocess.run(["git", *a], cwd=tmp_path, capture_output=True, text=True)
+    git("init", "-q")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    (tmp_path / "a.txt").write_text("v1")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    return git
+
+
+def test_commit_on_stop_commits_tracked_changes(tmp_path):
+    git = _git_repo(tmp_path)
+    app = HookApp()
+    app.include(commit_on_stop())
+    c = TestClient(app)
+
+    # dirty tracked change -> stop auto-commits (and never blocks)
+    (tmp_path / "a.txt").write_text("v2")
+    assert c.send(MockEvent.stop(cwd=str(tmp_path))) is None
+    log = git("log", "--oneline").stdout.strip().splitlines()
+    assert len(log) == 2 and "session checkpoint" in log[0]
+
+    # clean -> no new commit
+    c.send(MockEvent.stop(cwd=str(tmp_path)))
+    assert len(git("log", "--oneline").stdout.strip().splitlines()) == 2
+
+    # untracked-only -> not committed (tracked-only, like cwc)
+    (tmp_path / "new.txt").write_text("x")
+    c.send(MockEvent.stop(cwd=str(tmp_path)))
+    assert len(git("log", "--oneline").stdout.strip().splitlines()) == 2
+    assert "new.txt" not in git("ls-files").stdout
+
+
+def test_commit_on_stop_silent_outside_git(tmp_path):
+    """A non-git dir must not crash or block — passive backstop."""
+    app = HookApp()
+    app.include(commit_on_stop())
+    assert TestClient(app).send(MockEvent.stop(cwd=str(tmp_path))) is None
 
 
 # ── Scaffolding ──────────────────────────────────────────────────────────────

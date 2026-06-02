@@ -86,8 +86,13 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
       in the loop. Overlaps with the observer stream (which already timestamps
       every event) — the file is the no-DB, tail-from-a-terminal alternative.
       `fasthooks add heartbeat`.
-- [ ] **P4 · decompose `LongRunningStrategy`** → a thin bundle of the recipes
-      above (or deprecate it in favor of `include_recipes(...)`). DX-first.
+- [x] **P4 · deprecate `LongRunningStrategy`** — ✅ done (2026-06-02). Extracted
+      the missing reusable mechanism (`commit_on_stop`, cwc-style auto-commit
+      backstop) as the 6th recipe, then deprecated the strategy (DeprecationWarning
+      + docstring + docs banner) pointing at `include_recipes`. Its opinionated
+      session-routing/handoff *prompt* content is intentionally dropped — roll
+      your own `@app.on_session_start` context. Kept (not deleted) for a
+      migration window. `fasthooks add commit-on-stop`.
 - [ ] **P5 · dashboard showcase (separate repo)** — consumes fasthooks'
       `SQLiteObserver`/studio event stream + on-disk artifacts (PROGRESS, git
       log, tests.json, screenshots). fasthooks = substrate; dashboard = app.
@@ -136,6 +141,11 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
   knobs along the way.
 - 2026-06-02 — P2 `evaluator-gate`: ship with 3 guards (recursion sentinel,
   timeout, fail-open). Plumbing + guards verified with a stub evaluator.
+- 2026-06-02 — P4: extract `commit_on_stop` (cwc auto-commit backstop) as a
+  recipe, then **deprecate `LongRunningStrategy`** (warn, keep for a migration
+  window) — recipes cover the mechanisms; the strategy's prompt/routing content
+  is dropped as the opinionated god-class part. Resolves the P4 open question
+  (deprecate, not thin-bundle).
 - 2026-06-02 — Codex review (2 passes) caught two real failure modes, both fixed:
   (a) evidence-gate would *deadlock* under the default `HookApp()` (NullState,
   no persistence) — now detects NullState and **fails open + warns** (and the
