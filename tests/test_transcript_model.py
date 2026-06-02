@@ -85,6 +85,45 @@ class TestContentBlocks:
         assert block.thinking == "Let me consider..."
         assert block.signature == "abc123xyz"
 
+    def test_server_tool_use_block(self):
+        """server_tool_use parses to a typed block, no warning, faithful round-trip.
+
+        2.1.x server-side tool calls (advisor, web_search) used to fall to
+        UnknownBlock (which warns and injects a spurious text:"" on dump). Real
+        block shape; must round-trip byte-faithful (#34).
+        """
+        import warnings
+
+        from fasthooks.transcript import ServerToolUseBlock
+
+        data = {"type": "server_tool_use", "id": "srvtoolu_017HfDL", "name": "advisor", "input": {}}
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            block = parse_content_block(data)
+        assert isinstance(block, ServerToolUseBlock)
+        assert not w  # no "Unknown content block type" warning
+        assert block.name == "advisor"
+        assert block.model_dump(by_alias=True, exclude_none=True) == data  # no pollution
+
+    def test_advisor_tool_result_block(self):
+        """advisor_tool_result parses to a typed block, no warning, faithful (#34)."""
+        import warnings
+
+        from fasthooks.transcript import AdvisorToolResultBlock
+
+        data = {
+            "type": "advisor_tool_result",
+            "tool_use_id": "srvtoolu_017HfDL",
+            "content": {"type": "advisor_result", "text": "Consider an alternative."},
+        }
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            block = parse_content_block(data)
+        assert isinstance(block, AdvisorToolResultBlock)
+        assert not w
+        assert block.tool_use_id == "srvtoolu_017HfDL"
+        assert block.model_dump(by_alias=True, exclude_none=True) == data  # no pollution
+
     def test_unknown_block_type(self):
         """Unknown types should fallback to UnknownBlock and warn."""
         import warnings
