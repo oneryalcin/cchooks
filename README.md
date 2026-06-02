@@ -464,6 +464,7 @@ fasthooks init                      # create .claude/hooks.py
 fasthooks install hooks.py          # register with Claude Code (--scope, --http, --auth)
 fasthooks status                    # show what's registered and validate
 fasthooks uninstall                 # remove hooks (--scope)
+fasthooks test hooks.py -e PreToolUse:Bash -i '{"command":"rm -rf /"}'  # smoke-test a hook
 fasthooks add <recipe>              # scaffold a recipe (kill-switch, steer)
 fasthooks serve hooks.py            # run as a persistent HTTP server
 fasthooks studio                    # launch the visual debugger
