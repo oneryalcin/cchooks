@@ -20,6 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from fasthooks.recipes.evidence_gate import evidence_gate
 from fasthooks.recipes.kill_switch import kill_switch
 from fasthooks.recipes.steer import steer
 
@@ -27,7 +28,14 @@ if TYPE_CHECKING:
     from fasthooks.app import HookApp
     from fasthooks.blueprint import Blueprint
 
-__all__ = ["kill_switch", "steer", "RECIPES", "scaffold_for", "include_recipes"]
+__all__ = [
+    "kill_switch",
+    "steer",
+    "evidence_gate",
+    "RECIPES",
+    "scaffold_for",
+    "include_recipes",
+]
 
 
 class RecipeSpec(NamedTuple):
@@ -55,25 +63,35 @@ RECIPES: dict[str, RecipeSpec] = {
             "prompt (delivered once, then the file is removed)."
         ),
     ),
+    "evidence-gate": RecipeSpec(
+        factory=evidence_gate,
+        summary="Default-FAIL: deny marking a result passing without Reading evidence first.",
+        doc=(
+            "Point results_file at your project's results file (e.g. "
+            "test-results.json). The agent must open a screenshot or console "
+            "log with the Read tool before it can write that file."
+        ),
+    ),
 }
 
 
 def scaffold_for(name: str) -> str:
     """Build the editable config file contents for recipe ``name``.
 
-    The default arg is read from the engine's signature so the scaffold can't
-    drift from the actual default.
+    The knob (the engine's first parameter) and its default are read from the
+    signature so the scaffold can't drift from the actual default — and so each
+    recipe can name its own knob (``sentinel``, ``results_file``, ...).
     """
     spec = RECIPES[name]
     fn = spec.factory.__name__
-    default = inspect.signature(spec.factory).parameters["sentinel"].default
+    knob = next(iter(inspect.signature(spec.factory).parameters.values()))
     return (
         f'"""{name} recipe — scaffolded by `fasthooks add`. You own this; edit freely.\n'
         f"\n{spec.doc}\n"
         f'"""\n'
         f"from fasthooks.recipes import {fn}\n"
         f"\n"
-        f'recipe = {fn}(sentinel="{default}")\n'
+        f'recipe = {fn}({knob.name}="{knob.default}")\n'
     )
 
 

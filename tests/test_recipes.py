@@ -4,8 +4,14 @@ from __future__ import annotations
 from rich.console import Console
 
 from fasthooks import HookApp
-from fasthooks.recipes import include_recipes, kill_switch, scaffold_for, steer
-from fasthooks.testing import TestClient
+from fasthooks.recipes import (
+    evidence_gate,
+    include_recipes,
+    kill_switch,
+    scaffold_for,
+    steer,
+)
+from fasthooks.testing import MockEvent, TestClient
 
 
 def _pre_tool(cwd: str) -> dict:
@@ -50,13 +56,44 @@ def test_steer_injects_then_clears(tmp_path):
     assert not steer_file.exists()  # delivered exactly once
 
 
+def test_evidence_gate_requires_evidence_read_before_results_write(tmp_path):
+    """Default-FAIL: the results file can't be written until evidence is Read.
+
+    Needs a real state_dir — the read tracked in one hook invocation must be
+    visible to the write gate in the next (separate process in production).
+    """
+    app = HookApp(state_dir=str(tmp_path))
+    app.include(evidence_gate(results_file="test-results.json"))
+    c = TestClient(app)
+
+    # 1. write without evidence -> denied
+    r = c.send(MockEvent.write("test-results.json", "{}"))
+    assert r is not None and r.decision == "deny"
+
+    # 2. read a screenshot (evidence) -> the next write is allowed
+    c.send(MockEvent.read("screenshots/feature-1.png"))
+    assert c.send(MockEvent.write("test-results.json", "{}")) is None
+
+    # 3. evidence consumed -> the following write is denied again
+    assert c.send(MockEvent.write("test-results.json", "{}")).decision == "deny"
+
+    # 4. a non-results write is never gated
+    assert c.send(MockEvent.write("src/app.py", "x = 1")) is None
+
+    # 5. a non-evidence read (no screenshot/console marker) does not unlock
+    c.send(MockEvent.read("README.md"))
+    assert c.send(MockEvent.write("test-results.json", "{}")).decision == "deny"
+
+
 # ── Scaffolding ──────────────────────────────────────────────────────────────
 
 
 def test_scaffold_default_is_derived_from_engine(tmp_path):
-    # Guards against the scaffold's default drifting from the factory default.
+    # Guards against the scaffold's default (and knob name) drifting from the
+    # factory signature.
     assert 'kill_switch(sentinel="AGENT_STOP")' in scaffold_for("kill-switch")
     assert 'steer(sentinel="STEER.md")' in scaffold_for("steer")
+    assert 'evidence_gate(results_file="test-results.json")' in scaffold_for("evidence-gate")
 
 
 # ── Discovery ────────────────────────────────────────────────────────────────

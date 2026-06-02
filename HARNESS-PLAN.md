@@ -39,7 +39,7 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
 | `commit-on-stop.sh` | WORK SAVED / git commits | ✅ `LongRunningStrategy.enforce_commits` | extract to recipe |
 | Agent-maintained handoff (PROGRESS) | ITS OWN NOTES | ✅ `LongRunningStrategy` (richer: dynamic context inject, initializer/coding routing, pre-compact) | extract to recipe(s) |
 | Default-FAIL contract — feature list | — | ✅ `feature_list.json` tracking | keep |
-| **Default-FAIL contract — evidence gate** (`track-read`+`verify-gate`: can't mark pass without Reading evidence) | **PROOF IT LOOKED · HARD GATE** | ❌ **missing** | **build (recipe) — highest value** |
+| **Default-FAIL contract — evidence gate** (`track-read`+`verify-gate`: can't mark pass without Reading evidence) | **PROOF IT LOOKED · HARD GATE** | ✅ **shipped** — `evidence_gate` recipe (P1) | done |
 | **Fresh-context evaluator** (subagent PASS/NEEDS_WORK) | **SECOND OPINION · EVALUATOR** | ⚠️ **plumbing spiked** (Stop hook → subprocess → block) | build (recipe) + pollution guards |
 | **Stall / heartbeat** ("goes quiet → loop moves on") | **LAST CHECK-IN · WATCHDOG** | ⚠️ partial (could emit heartbeat; the *timeout→next* is loop) | hook emits heartbeat; loop owns timeout |
 | Token-budget warnings | — | ✅ `TokenBudgetStrategy` (100k/150k/180k) | keep |
@@ -64,11 +64,13 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
 
 ## Plan (phased — pull one thread at a time)
 
-- [ ] **P1 · `evidence-gate` recipe** — the missing star primitive. `PreToolUse`
-      on the results-file write, denied unless an evidence file (screenshot/
-      console log) was `Read` this session; consume the evidence on each gated
-      write. Reference: cwc `track-read.sh` + `verify-gate.sh` (and their listed
-      gaps to tighten). *Highest value, lowest risk, demo centerpiece.*
+- [x] **P1 · `evidence-gate` recipe** — ✅ shipped (2026-06-02). `PreToolUse`
+      Read tracks evidence (screenshots/console-logs) into State; Write/Edit to
+      the results file is denied unless evidence was read this session, and each
+      gated write consumes it. State (JSON-backed) is the mechanism so it works
+      across separate hook processes. Faithful to cwc (simple/teaching version,
+      same documented gaps). `fasthooks add evidence-gate`. Also generalized
+      `scaffold_for` to read each recipe's first knob (was hardcoded `sentinel`).
 - [ ] **P2 · `evaluator-gate` recipe** — productionize the spike with the
       pollution guards above. Ships the pattern; the actual evaluator agent
       config is the user's.
@@ -120,12 +122,13 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
 - 2026-06-02 — Evaluator CAN run in a Stop hook (plumbing proven); pollution
   guards TBD before the real `claude --agent` call.
 - 2026-06-02 — Loop + dashboard stay outside fasthooks.
+- 2026-06-02 — P1 `evidence-gate`: ship the simple/faithful version (documented
+  cwc gaps), not the tightened one. Generalized `scaffold_for` for non-`sentinel`
+  knobs along the way.
 
 ## Open questions
 
 - Pollution test: does a real `claude --agent evaluator -p` from a Stop hook
-  recurse / blow cost? Needs a guarded live test.
-- `evidence-gate`: tighten the cwc gaps (Bash `sed`/`jq` bypass, basename-only
-  match, any-read-unlocks-any-row) or ship the simple teaching version first?
+  recurse / blow cost? Needs a guarded live test. (P2)
 - Decompose vs deprecate `LongRunningStrategy` — keep as a convenience bundle, or
-  retire it for explicit `include_recipes`?
+  retire it for explicit `include_recipes`? (P4)
