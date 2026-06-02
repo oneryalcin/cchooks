@@ -33,22 +33,30 @@ def _seed(db_path: Path, decisions: list[str]) -> None:
     conn.close()
 
 
-def test_stats_folds_approve_into_allow_on_read(tmp_path: Path):
-    """The reader must show one vocabulary even on a pre-migration DB.
+def test_create_app_migrates_legacy_db_on_open(tmp_path: Path):
+    """Opening a pre-#26 studio.db converges the store on one vocabulary.
 
-    The read-only studio server never runs the observer's one-time migration, so
-    get_stats folds the deprecated 'approve' into 'allow' in its aggregation —
-    otherwise a human looking at the decisions breakdown sees two buckets for one
-    concept (the exact symptom of #26).
+    create_app runs the one-time migration so the deprecated 'approve' becomes
+    'allow' in the rows themselves — every read path (stats and the detail
+    endpoints) then sees canonical values with no per-query folding. We assert
+    the data was rewritten, not that a single endpoint papered over it.
     """
     db = tmp_path / "studio.db"
     _seed(db, ["approve", "approve", "allow", "deny", "block"])
 
-    stats = TestClient(create_app(db)).get("/api/stats").json()
+    client = TestClient(create_app(db))
 
+    # The migration rewrote the rows and stamped the schema version.
+    conn = sqlite3.connect(db)
+    rows = dict(conn.execute("SELECT decision, COUNT(*) FROM events GROUP BY decision"))
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+    conn.close()
+    assert rows == {"allow": 3, "deny": 1, "block": 1}
+    assert "approve" not in rows
+
+    # ...so the aggregate read reflects one vocabulary too.
+    stats = client.get("/api/stats").json()
     assert stats["decisions"] == {"allow": 3, "deny": 1, "block": 1}
-    assert "approve" not in stats["decisions"]
-    # deny_rate counts deny + block over all decisions
     assert stats["decisions"]["deny"] + stats["decisions"]["block"] == 2
 
 

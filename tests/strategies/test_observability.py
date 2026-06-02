@@ -113,6 +113,17 @@ class TestEventEmission:
         assert decision.decision == "allow"
         assert decision.message == "observed"
 
+    def test_assert_allowed_passes_on_allow_decision(self, tmp_path: Path):
+        """The public assert_allowed() helper matches the canonical 'allow' (#26).
+
+        Regression: strategies record 'allow' (not the deprecated 'approve'), so a
+        helper filtering for 'approve' would wrongly fail on a genuinely allowed
+        path. No other test exercises this helper.
+        """
+        client = StrategyTestClient(ObservableStrategy(), project_dir=tmp_path)
+        client.trigger_stop()
+        client.assert_allowed()  # raises AssertionError if the filter drifts
+
     def test_hook_exit_has_duration(self, tmp_path: Path):
         """hook_exit event includes duration_ms."""
         strategy = ObservableStrategy()

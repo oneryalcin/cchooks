@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fasthooks.depends import State, Transcript
+from fasthooks.observability import Decision
 from fasthooks.testing.mocks import MockEvent
 
 if TYPE_CHECKING:
@@ -402,12 +403,17 @@ class StrategyTestClient:
             ), f"No block with '{reason_contains}' in reason. Reasons: {reasons}"
 
     def assert_allowed(self) -> None:
-        """Assert that an allow/approve decision was made."""
+        """Assert that an allow decision was made.
+
+        Strategies record the canonical observability vocabulary (#26), so an
+        allowed path emits ``Decision.ALLOW``. ``Decision`` is a str-enum, so the
+        comparison also matches a legacy raw ``"allow"`` row.
+        """
         decisions = [e for e in self._events if e.event_type == "decision"]
-        approves = [e for e in decisions if getattr(e, "decision", None) == "approve"]
+        allows = [e for e in decisions if getattr(e, "decision", None) == Decision.ALLOW]
 
         decisions_list = [getattr(e, "decision", None) for e in decisions]
-        assert approves, f"No approve decisions found. Decisions: {decisions_list}"
+        assert allows, f"No allow decisions found. Decisions: {decisions_list}"
 
     def assert_event_emitted(
         self, custom_event_type: str, **payload_match: Any

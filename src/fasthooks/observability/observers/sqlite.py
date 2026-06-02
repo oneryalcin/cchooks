@@ -12,6 +12,32 @@ if TYPE_CHECKING:
     from fasthooks.observability.events import HookObservabilityEvent
 
 
+def migrate_decision_vocab(conn: sqlite3.Connection) -> None:
+    """Fold the deprecated ``approve`` decision into canonical ``allow``, once.
+
+    The events store can predate the allow/approve unification (#26). Both the
+    writer (``SQLiteObserver`` on init) and the read-only studio server (on open)
+    call this, so any DB they touch converges on one vocabulary — every read path
+    then sees canonical values with no per-query folding.
+
+    Gated on ``PRAGMA user_version``: a one-time UPDATE, never a full-table scan
+    on every connect, and a pure no-op on an already-migrated DB (the common
+    case). Commits itself so it works for callers that don't wrap it in a
+    committing ``with`` block (the studio server opens bare connections).
+    """
+    (version,) = conn.execute("PRAGMA user_version").fetchone()
+    if version >= 1:
+        return
+    # The DB may be brand new (e.g. studio aimed at a fresh path) with no table.
+    table_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'events'"
+    ).fetchone()
+    if table_exists:
+        conn.execute("UPDATE events SET decision = 'allow' WHERE decision = 'approve'")
+    conn.execute("PRAGMA user_version = 1")
+    conn.commit()
+
+
 class SQLiteObserver(BaseObserver):
     """Write events to SQLite for studio visualization.
 
@@ -62,15 +88,7 @@ class SQLiteObserver(BaseObserver):
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type)")
 
-            # One-time migration: fold the deprecated "approve" decision into the
-            # canonical "allow". Gated on user_version so it runs once per DB, not
-            # a full-table scan on every observer connect.
-            (version,) = conn.execute("PRAGMA user_version").fetchone()
-            if version < 1:
-                conn.execute(
-                    "UPDATE events SET decision = 'allow' WHERE decision = 'approve'"
-                )
-                conn.execute("PRAGMA user_version = 1")
+            migrate_decision_vocab(conn)
 
     def _write(self, event: HookObservabilityEvent) -> None:
         """Insert event into database.
