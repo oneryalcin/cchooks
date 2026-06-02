@@ -183,7 +183,7 @@ def test_commit_on_stop_commits_tracked_changes(tmp_path):
     (tmp_path / "a.txt").write_text("v2")
     assert c.send(MockEvent.stop(cwd=str(tmp_path))) is None
     log = git("log", "--oneline").stdout.strip().splitlines()
-    assert len(log) == 2 and "session checkpoint" in log[0]
+    assert len(log) == 2 and "wip checkpoint" in log[0]
 
     # clean -> no new commit
     c.send(MockEvent.stop(cwd=str(tmp_path)))
@@ -201,6 +201,43 @@ def test_commit_on_stop_silent_outside_git(tmp_path):
     app = HookApp()
     app.include(commit_on_stop())
     assert TestClient(app).send(MockEvent.stop(cwd=str(tmp_path))) is None
+
+
+def test_commit_on_stop_ordering_vs_blocking_gate(tmp_path):
+    """Composition with a blocking Stop gate is order-sensitive (documented).
+
+    Included BEFORE a gate: it commits, then the gate blocks (frequent WIP
+    checkpoint — fires on every stop). Included AFTER: the gate's block
+    short-circuits and it never commits (commit-only-on-allowed-stop)."""
+    from fasthooks import Blueprint, block
+
+    def blocker():
+        bp = Blueprint("blocker")
+
+        @bp.on_stop()
+        def b(event):
+            return block("NEEDS_WORK")
+
+        return bp
+
+    git = _git_repo(tmp_path)
+    (tmp_path / "a.txt").write_text("dirty")
+
+    # commit_on_stop BEFORE the gate -> commits even though the gate blocks
+    app = HookApp()
+    app.include(commit_on_stop())
+    app.include(blocker())
+    r = TestClient(app).send(MockEvent.stop(cwd=str(tmp_path)))
+    assert r is not None and r.decision == "block"
+    assert len(git("log", "--oneline").stdout.strip().splitlines()) == 2  # committed
+
+    # commit_on_stop AFTER the gate -> block short-circuits, no commit
+    (tmp_path / "a.txt").write_text("dirty2")
+    app2 = HookApp()
+    app2.include(blocker())
+    app2.include(commit_on_stop())
+    TestClient(app2).send(MockEvent.stop(cwd=str(tmp_path)))
+    assert len(git("log", "--oneline").stdout.strip().splitlines()) == 2  # unchanged
 
 
 # ── Scaffolding ──────────────────────────────────────────────────────────────

@@ -104,11 +104,14 @@ RECIPES: dict[str, RecipeSpec] = {
     ),
     "commit-on-stop": RecipeSpec(
         factory=commit_on_stop,
-        summary="Auto-commit tracked changes at session end (durability backstop).",
+        summary="Auto-commit tracked changes on every Stop (durability backstop).",
         doc=(
             "On Stop, `git commit -am '<message_prefix>: <timestamp>'` when there "
             "are tracked changes. Passive backstop (never blocks, fails silent); "
-            "untracked files are left for the agent to `git add`."
+            "untracked files are left for the agent to `git add`. Fires on every "
+            "Stop (frequent WIP checkpoints). To commit only when the stop is "
+            "actually allowed, include this AFTER your blocking gates so a block "
+            "short-circuits it."
         ),
     ),
 }

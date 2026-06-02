@@ -11,6 +11,16 @@ repo, nothing to commit, or the commit fails (no ``user.name``, a rejecting
 hook, ...), it silently does nothing — it's a backstop, not a gate. Check
 ``git log`` periodically when relying on it.
 
+**It commits on every Stop**, including ones a *later* Stop gate then blocks —
+that's intended (the dashboard's "committed every few minutes"): in an
+autonomous loop the stop fires each turn, so WIP is saved continuously. The
+commits are working checkpoints (hence the ``wip checkpoint`` message), not a
+claim the session ended. fasthooks short-circuits on the first blocking
+handler, so if you instead want to commit *only when the stop is actually
+allowed*, include this recipe **after** your blocking gates (e.g.
+``include_recipes(...)`` then ``app.include(commit_on_stop())``) — a gate's
+block will short-circuit before it runs.
+
 Engine for ``fasthooks add commit-on-stop``. Ported from Anthropic's
 cwc-long-running-agents (Apache-2.0) ``commit-on-stop.sh``.
 """
@@ -22,14 +32,16 @@ import time
 from fasthooks.blueprint import Blueprint
 from fasthooks.events.lifecycle import Stop
 
-DEFAULT_PREFIX = "session checkpoint"
+DEFAULT_PREFIX = "wip checkpoint"
 
 
 def commit_on_stop(message_prefix: str = DEFAULT_PREFIX) -> Blueprint:
     """Commit tracked changes on Stop with ``"<message_prefix>: <timestamp>"``.
 
     Only commits when there are tracked (staged or unstaged) changes; untracked
-    files are left alone. Always allows the stop.
+    files are left alone. Always allows the stop. Fires on *every* Stop (a
+    frequent WIP backstop) — see the module docstring for the interaction with
+    blocking Stop gates and how to commit-only-on-allowed-stop.
     """
     bp = Blueprint("commit_on_stop")
 

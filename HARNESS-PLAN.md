@@ -146,6 +146,13 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
   window) — recipes cover the mechanisms; the strategy's prompt/routing content
   is dropped as the opinionated god-class part. Resolves the P4 open question
   (deprecate, not thin-bundle).
+- 2026-06-02 — P4 Codex review: standard pass flagged `commit_on_stop` +
+  `evaluator_gate` ordering (commit fires before a later gate blocks). Resolved:
+  this is the cwc primitive's intended *commit-on-every-stop* behavior (frequent
+  WIP backstop), so kept it — but renamed the message `session checkpoint` ->
+  `wip checkpoint` (was misleading), documented the interaction, and pinned both
+  orders in a test (include AFTER gates to commit-only-on-allowed-stop, since
+  dispatch short-circuits on first block). Adversarial pass: approve.
 - 2026-06-02 — Codex review (2 passes) caught two real failure modes, both fixed:
   (a) evidence-gate would *deadlock* under the default `HookApp()` (NullState,
   no persistence) — now detects NullState and **fails open + warns** (and the
