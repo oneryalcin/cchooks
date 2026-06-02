@@ -77,6 +77,20 @@ def _write(tmp_path: Path, name: str, body: str) -> Path:
     return p
 
 
+def test_envelope_populates_lifecycle_required_fields():
+    """Lifecycle events have required fields the generic envelope must supply,
+    or `fasthooks test -e SessionStart` (etc.) builds an invalid event."""
+    required = {
+        "SessionStart": "source",
+        "SessionEnd": "reason",
+        "PreCompact": "trigger",
+        "Notification": "notification_type",
+    }
+    for event_name, field in required.items():
+        env = build_event(event_name, None, {}, cwd="/w", transcript_path="/t.jsonl")
+        assert field in env, f"{event_name} envelope missing required {field!r}"
+
+
 def test_envelope_matches_mockevent():
     """Drift guard: the CLI envelope must carry every field MockEvent emits.
 

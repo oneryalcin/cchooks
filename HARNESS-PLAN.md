@@ -86,8 +86,13 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
       in the loop. Overlaps with the observer stream (which already timestamps
       every event) — the file is the no-DB, tail-from-a-terminal alternative.
       `fasthooks add heartbeat`.
-- [ ] **P4 · decompose `LongRunningStrategy`** → a thin bundle of the recipes
-      above (or deprecate it in favor of `include_recipes(...)`). DX-first.
+- [x] **P4 · composable harness > `LongRunningStrategy`** — ✅ done (2026-06-02).
+      Extracted the missing reusable mechanism (`commit_on_stop`, cwc-style
+      auto-commit backstop) as the 6th recipe, and added
+      `examples/long_running_harness.py` showing the recipe-composed harness.
+      `LongRunningStrategy` stays as-is with a plain doc/docstring note pointing
+      at the recipe approach. **No deprecation ceremony** — no users, greenfield;
+      just state the current preferred shape. `fasthooks add commit-on-stop`.
 - [ ] **P5 · dashboard showcase (separate repo)** — consumes fasthooks'
       `SQLiteObserver`/studio event stream + on-disk artifacts (PROGRESS, git
       log, tests.json, screenshots). fasthooks = substrate; dashboard = app.
@@ -136,6 +141,25 @@ Anthropic's official reference design and fasthooks' own Blueprint/recipe model.
   knobs along the way.
 - 2026-06-02 — P2 `evaluator-gate`: ship with 3 guards (recursion sentinel,
   timeout, fail-open). Plumbing + guards verified with a stub evaluator.
+- 2026-06-02 — P4: extract `commit_on_stop` (cwc auto-commit backstop) as a
+  recipe + add `examples/long_running_harness.py` (recipe-composed harness).
+  **Decided NOT to deprecate** `LongRunningStrategy` — no users, greenfield, so a
+  DeprecationWarning + migration ceremony is fluff. Just state the current
+  preferred shape (recipes) with a plain doc note; leave the strategy as-is.
+- 2026-06-02 — Deprecation needs a *replacement*, not just a warning: added
+  `examples/long_running_harness.py` — the full harness composed from the 6
+  recipes (with `state_dir`, gate-then-commit ordering, and the session-routing
+  context as a plain `on_session_start` handler). Deprecation message + docs now
+  point at it. Building it surfaced a real `fasthooks test` gap (SessionStart/
+  SessionEnd/PreCompact/Notification envelopes missed their required fields) —
+  fixed + tested.
+- 2026-06-02 — P4 Codex review: standard pass flagged `commit_on_stop` +
+  `evaluator_gate` ordering (commit fires before a later gate blocks). Resolved:
+  this is the cwc primitive's intended *commit-on-every-stop* behavior (frequent
+  WIP backstop), so kept it — but renamed the message `session checkpoint` ->
+  `wip checkpoint` (was misleading), documented the interaction, and pinned both
+  orders in a test (include AFTER gates to commit-only-on-allowed-stop, since
+  dispatch short-circuits on first block). Adversarial pass: approve.
 - 2026-06-02 — Codex review (2 passes) caught two real failure modes, both fixed:
   (a) evidence-gate would *deadlock* under the default `HookApp()` (NullState,
   no persistence) — now detects NullState and **fails open + warns** (and the

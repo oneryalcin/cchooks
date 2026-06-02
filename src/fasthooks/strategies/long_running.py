@@ -233,19 +233,17 @@ Before context fills up:
 
 
 class LongRunningStrategy(Strategy):
-    """Harness for long-running autonomous agents.
+    """Harness for long-running autonomous agents (bundled form).
 
     Implements the two-agent pattern:
     - Initializer: First run sets up feature_list.json, init.sh, git
     - Coding: Subsequent runs make incremental progress
 
-    Example:
-        strategy = LongRunningStrategy(
-            feature_list="feature_list.json",
-            progress_file="claude-progress.txt",
-            enforce_commits=True,
-        )
-        app.include(strategy.get_blueprint())
+    The reusable mechanisms here also ship as standalone, composable **recipes**
+    (``kill_switch``, ``steer``, ``evidence_gate``, ``evaluator_gate``,
+    ``heartbeat``, ``commit_on_stop``) — see
+    ``examples/long_running_harness.py`` for the recipe-based way to assemble a
+    harness, which most projects will prefer.
     """
 
     class Meta:

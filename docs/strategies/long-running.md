@@ -1,5 +1,12 @@
 # Long-Running Agent Strategy
 
+!!! note "Prefer composing recipes"
+    The mechanisms here also ship as standalone, composable **recipes**
+    (`kill_switch`, `steer`, `evidence_gate`, `evaluator_gate`, `heartbeat`,
+    `commit_on_stop`). See
+    [`examples/long_running_harness.py`](https://github.com/oneryalcin/fasthooks/blob/main/examples/long_running_harness.py)
+    for the recipe-based way to assemble a harness — most projects will prefer it.
+
 The `LongRunningStrategy` implements Anthropic's two-agent pattern for autonomous agents that work across multiple context windows. It prevents the two common failure modes of long-running agents: **one-shotting** (trying to do everything at once) and **premature victory** (declaring done too early).
 
 > **Live Example**: See a full expense tracker app built autonomously using this strategy:
